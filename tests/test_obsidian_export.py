@@ -26,6 +26,7 @@ def test_export_obsidian_creates_notes_and_index(tmp_path):
 
     note_a = (tmp_path / "A.md").read_text(encoding="utf-8")
     assert "category: lieu" in note_a
+    assert 'title: "Sushi Dai"' in note_a
     assert "[[Tokyo]]" in note_a
     assert "https://www.instagram.com/p/A/" in note_a
 
