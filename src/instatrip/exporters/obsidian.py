@@ -42,10 +42,12 @@ def export_obsidian(insights: list[PostInsight], out_dir: Path, collection_slug:
     by_city: dict[str, list[PostInsight]] = defaultdict(list)
     tips: list[PostInsight] = []
     for i in insights:
-        if i.category is Category.TIPS or not i.city:
-            tips.append(i) if i.category is Category.TIPS else by_city["Sans ville"].append(i)
-        else:
+        if i.category is Category.TIPS:
+            tips.append(i)
+        elif i.city:
             by_city[i.city].append(i)
+        else:
+            by_city["Sans ville"].append(i)
 
     lines = [f"# {collection_slug}", ""]
     for city in sorted(by_city.keys()):

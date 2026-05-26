@@ -44,11 +44,15 @@ Pour chaque fichier `data/raw/<shortcode>.json` du projet courant, produire `dat
   "skipped": <int>,
   "failed": <int>,
   "failures": [{"shortcode": "...", "error": "..."}],
-  "finished_at": "<ISO8601>"
+  "finished_at": "<ISO8601 UTC, suffixe Z>"
 }
 ```
 
-   En cas d'échec global (ex: dossier `data/raw` introuvable), écrire `status: "error"` avec un champ `error`.
+   Invariants obligatoires :
+   - `len(failures) == failed`
+   - `finished_at` au format UTC avec suffixe `Z` (ex: `2026-05-26T14:30:00Z`)
+
+   En cas d'échec global (ex: dossier `data/raw` introuvable), écrire `status: "error"` avec un champ `error`. Les autres champs (`processed`, `skipped`, `failed`, `failures`, `finished_at`) restent présents (valeurs à 0 / `[]` si rien n'a tourné).
 
 ## Règles
 

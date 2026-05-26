@@ -13,7 +13,7 @@ from .exporters.excel import export_excel
 from .exporters.obsidian import export_obsidian
 from .extract import extract_all
 from .interpret_runner import run_analysis
-from .models import PostInsight, RawPost
+from .models import PostInsight
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
