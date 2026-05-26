@@ -7,7 +7,8 @@ from pathlib import Path
 @lru_cache(maxsize=1)
 def _reader():
     import easyocr
-    return easyocr.Reader(["en", "ja"], gpu=False)
+    import torch
+    return easyocr.Reader(["en", "ja"], gpu=torch.cuda.is_available())
 
 
 def ocr_images(paths: list[Path], min_confidence: float = 0.4) -> list[str]:
