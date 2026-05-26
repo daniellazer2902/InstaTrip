@@ -92,3 +92,35 @@ def sample_frames(video_path: Path, out_dir: Path, every_seconds: float = 2.0) -
         stderr=subprocess.DEVNULL,
     )
     return sorted(out_dir.glob("frame_*.jpg"))
+
+
+def _dhash(image_path: Path) -> int:
+    """Perceptual hash 8×8 sensible aux changements de layout, insensible
+    aux variations brightness/contrast."""
+    from PIL import Image
+
+    img = Image.open(image_path).convert("L").resize((9, 8), Image.LANCZOS)
+    pixels = list(img.getdata())
+    bits = 0
+    for row in range(8):
+        for col in range(8):
+            left = pixels[row * 9 + col]
+            right = pixels[row * 9 + col + 1]
+            if left > right:
+                bits |= (1 << (row * 8 + col))
+    return bits
+
+
+def dedup_frames(paths: list[Path], threshold: int = 6) -> list[Path]:
+    """Garde une frame par 'plan' visuel. Si une frame est trop similaire
+    (Hamming distance ≤ threshold) à la dernière retenue, on la skip.
+    threshold=6 = bon compromis : capte les overlays de texte courts,
+    skip les frames quasi-identiques d'un plan fixe."""
+    kept: list[Path] = []
+    last_hash: int | None = None
+    for p in paths:
+        h = _dhash(p)
+        if last_hash is None or bin(h ^ last_hash).count("1") > threshold:
+            kept.append(p)
+            last_hash = h
+    return kept

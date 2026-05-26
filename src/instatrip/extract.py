@@ -7,7 +7,7 @@ from pathlib import Path
 from rich.console import Console
 
 from .config import Settings
-from .media import download_media, extract_audio, sample_frames
+from .media import dedup_frames, download_media, extract_audio, sample_frames
 from .models import MediaType, RawPost
 from .ocr import ocr_images
 from .post_page import fetch_post
@@ -26,13 +26,18 @@ def extract_one(
     force: bool = False,
     frame_interval: float = 2.0,
     ocr_min_confidence: float = 0.4,
+    frame_dedup: bool = True,
+    dedup_threshold: int = 6,
 ) -> RawPost:
     """Pipeline phase 1 pour un post. Idempotent : si le JSON existe
     déjà, on le relit (sauf si force=True).
 
     - frame_interval : intervalle en secondes entre les frames échantillonnées
       pour l'OCR (défaut 2.0). Plus petit = plus de frames = plus de temps OCR.
-    - ocr_min_confidence : seuil de confiance EasyOCR (défaut 0.4)."""
+    - ocr_min_confidence : seuil de confiance EasyOCR (défaut 0.4).
+    - frame_dedup : si True, skip les frames quasi-identiques via dHash.
+    - dedup_threshold : Hamming distance maximale pour considérer une frame
+      comme doublon (défaut 6, plus bas = plus strict)."""
     out = _raw_path(settings, shortcode)
     if out.exists() and not force:
         console.print(f"[dim]cache hit: {shortcode}")
@@ -54,6 +59,10 @@ def extract_one(
 
         frames_dir = settings.media_dir / f"{shortcode}_frames"
         frames = sample_frames(media["video_path"], frames_dir, every_seconds=frame_interval)
+        if frame_dedup and frames:
+            before = len(frames)
+            frames = dedup_frames(frames, threshold=dedup_threshold)
+            console.print(f"[dim]→ {shortcode}: dedup frames {before} → {len(frames)}")
         if frames:
             console.print(f"[cyan]→ {shortcode}: OCR {len(frames)} frames")
             ocr_text = ocr_images(frames, min_confidence=ocr_min_confidence)
@@ -100,6 +109,8 @@ def extract_all(
     force: bool = False,
     frame_interval: float = 2.0,
     ocr_min_confidence: float = 0.4,
+    frame_dedup: bool = True,
+    dedup_threshold: int = 6,
 ) -> list[RawPost]:
     results: list[RawPost] = []
     for sc in shortcodes:
@@ -108,6 +119,8 @@ def extract_all(
                 sc, settings, force=force,
                 frame_interval=frame_interval,
                 ocr_min_confidence=ocr_min_confidence,
+                frame_dedup=frame_dedup,
+                dedup_threshold=dedup_threshold,
             ))
         except Exception as e:
             console.print(f"[red]✗ {sc}: {e}")

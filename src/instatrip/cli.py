@@ -44,6 +44,8 @@ def scrape(
     force: bool = typer.Option(False, help="Force re-download"),
     frame_interval: float = typer.Option(2.0, help="Intervalle (s) entre frames OCR. 1.0 = 2× plus de frames, +50% temps."),
     ocr_confidence: float = typer.Option(0.4, help="Seuil de confiance EasyOCR (0-1). Plus haut = moins de bruit."),
+    frame_dedup: bool = typer.Option(True, help="Dédup les frames quasi-identiques (dHash) avant OCR."),
+    dedup_threshold: int = typer.Option(6, help="Distance Hamming max pour dédup (0-64). Plus bas = plus strict."),
 ):
     """Phase 1 : extraction brute pour chaque shortcode."""
     s = Settings.load()
@@ -53,6 +55,8 @@ def scrape(
         codes, s, force=force,
         frame_interval=frame_interval,
         ocr_min_confidence=ocr_confidence,
+        frame_dedup=frame_dedup,
+        dedup_threshold=dedup_threshold,
     )
 
 
@@ -95,7 +99,7 @@ def run(
 ):
     """Pipeline complet : collect → scrape → interpret → export."""
     collect(url=url)
-    scrape(force=False, frame_interval=frame_interval, ocr_confidence=ocr_confidence)
+    scrape(force=False, frame_interval=frame_interval, ocr_confidence=ocr_confidence, frame_dedup=True, dedup_threshold=6)
     interpret(trip_context=trip_context, workers=workers)
     export(excel=True, obsidian=True)
 
