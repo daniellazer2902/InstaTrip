@@ -1,6 +1,13 @@
 # InstaTrip
 
-Pipeline Instagram saved → Excel/Obsidian pour préparer un voyage.
+Pipeline Instagram saved → Excel + Obsidian pour préparer un voyage à partir d'une collection IG "Enregistrements".
+
+## Prérequis
+
+- **Python 3.12** + [uv](https://docs.astral.sh/uv/) (gestionnaire de deps)
+- **ffmpeg** sur le PATH (`winget install Gyan.FFmpeg`)
+- **Claude Code CLI** (`claude --version` doit fonctionner) — l'analyse V0 délègue à Claude Code en headless via ton abonnement (aucune clé API séparée)
+- **GPU NVIDIA + CUDA** (optionnel mais fortement recommandé — voir section dédiée)
 
 ## Setup
 
@@ -11,28 +18,124 @@ cp .env.example .env
 # éditer .env : COLLECTION_URL, COLLECTION_SLUG
 ```
 
-Prérequis : `ffmpeg` sur le PATH (`winget install Gyan.FFmpeg`) et **Claude Code CLI** (`claude --version` doit fonctionner) — l'analyse V0 délègue à Claude Code en headless.
-
-## Usage
+## Usage — cas nominal
 
 ```
-uv run instatrip auth          # une fois : login manuel Instagram
-uv run instatrip collect       # scrolle la collection → liste shortcodes
-uv run instatrip scrape        # phase 1 : médias + transcription + OCR
-uv run instatrip interpret --trip-context "Voyage Japon 2026"   # phase 2 : skill Claude Code
-uv run instatrip export        # Excel + Obsidian
+uv run instatrip auth                                              # 1× : login manuel Instagram
+uv run instatrip collect                                           # scrolle la collection → shortcodes
+uv run instatrip scrape                                            # phase 1 : DL + transcription + OCR
+uv run instatrip interpret --trip-context "Voyage Japon 2026" --workers 4   # phase 2 : analyse LLM
+uv run instatrip export                                            # Excel + Obsidian
 ```
 
 ou tout en un :
 
 ```
-uv run instatrip run --trip-context "Voyage Japon 2026"
+uv run instatrip run --trip-context "Voyage Japon 2026" --workers 4
 ```
+
+### Reprise après erreur
+
+Chaque étape est **idempotente avec cache par shortcode** :
+- `scrape` skip les posts dont `data/raw/<shortcode>.json` existe déjà
+- `interpret` skip ceux dont `data/enriched/<shortcode>.json` existe déjà
+- → re-lancer la même commande continue là où ça s'était arrêté
+
+Pour forcer un re-traitement : `--force` sur `scrape`, ou supprimer manuellement le JSON du post à re-traiter.
 
 ## Architecture
 
-- Phase 1 (`extract.py`) : Playwright + yt-dlp + Whisper + EasyOCR → `data/raw/<shortcode>.json`
-- Phase 2 V0 (`interpret_runner.py` → `claude -p` headless → skill `instatrip-analyze`) → `data/enriched/<shortcode>.json` + sentinelle `data/.enriched.done`
-- Export : `output/<slug>.xlsx` + `output/obsidian/`
+| Phase | Module | Entrée | Sortie | Coût |
+|---|---|---|---|---|
+| 1. **Scrape** | `extract.py` | shortcodes | `data/raw/<sc>.json` | local (Playwright + yt-dlp + Whisper + EasyOCR) |
+| 2. **Interpret** | `interpret_runner.py` → skill | `data/raw/` | `data/enriched/<sc>.json` + sentinelle `data/.enriched.done[.N]` | abonnement Claude Code (aucun overage) |
+| 3. **Export** | `exporters/` | `data/enriched/` | `output/<slug>.xlsx` + `output/obsidian/` | local |
 
-Idempotent : chaque étape utilise un cache par shortcode. Coût de la phase 2 visible via `/cost` dans la session Claude Code, ou les stats du fichier sentinelle.
+Les fichiers médias intermédiaires (mp4, wav, frames jpg) sont **supprimés automatiquement** une fois le JSON brut écrit pour économiser le disque. Les JSONs sont la source de vérité.
+
+## Accélération GPU (recommandé)
+
+Avec une GPU NVIDIA + CUDA, Whisper et EasyOCR passent sur GPU automatiquement (détection via `torch.cuda.is_available()`).
+
+**Speedup constaté** : ~5× sur un RTX 4060 Laptop (33 s/post vs 150 s/post CPU).
+
+Si CUDA n'est pas installé, fallback CPU silencieux (Whisper int8, EasyOCR `gpu=False`). Pour installer PyTorch CUDA, le `pyproject.toml` pointe déjà vers l'index `pytorch-cu128` — un simple `uv sync` télécharge les wheels CUDA (~4 GB).
+
+## Options CLI avancées
+
+### `scrape` — ajuster qualité OCR vs vitesse
+
+| Option | Défaut | Effet |
+|---|---|---|
+| `--frame-interval 2.0` | 2 s | Intervalle entre frames vidéo échantillonnées. `1.0` = 2× plus de frames (+50% temps). |
+| `--ocr-confidence 0.4` | 0.4 | Seuil EasyOCR (0-1). Plus haut = moins de bruit, mais perte de texte flou. |
+| `--frame-dedup / --no-frame-dedup` | ON | Skip les frames quasi-identiques (dHash perceptuel) avant OCR. |
+| `--dedup-threshold 6` | 6 | Distance Hamming max pour considérer 2 frames identiques (0-64). Plus bas = plus strict. |
+| `--dedup-mode bands` | `bands` | `bands` = hash top+bottom 30% (cible overlays texte IG). `full` = hash image entière. |
+| `--force` | off | Re-télécharge et re-traite tous les posts (ignore cache). |
+
+**Exemples** :
+
+```
+# Plus de frames (gain d'info, coût +50%)
+uv run instatrip scrape --frame-interval 1.0
+
+# Moins de bruit OCR
+uv run instatrip scrape --ocr-confidence 0.6
+
+# Dedup plus strict (capte changements de texte plus subtils)
+uv run instatrip scrape --dedup-threshold 3
+
+# Forcer un re-scrape complet avec params différents
+uv run instatrip scrape --force --frame-interval 1.0 --dedup-threshold 4
+```
+
+### `interpret` — parallélisation LLM
+
+| Option | Défaut | Effet |
+|---|---|---|
+| `--trip-context "..."` | (vide) | Contexte voyage donné au LLM (ex: destination, dates). |
+| `--workers N` | 1 | Nombre de `claude -p` lancés en parallèle. **4 est un bon choix** pour ~100 posts. |
+
+**Important** : `--workers 4` spawn 4 instances Claude Code simultanément, toutes tirant sur **ton abonnement Claude Code** (même quota, pas de frais supplémentaires). Speedup ~3.5-4×.
+
+```
+uv run instatrip interpret --trip-context "Voyage Japon 2026" --workers 4
+```
+
+### `export` — formats
+
+| Option | Défaut | Effet |
+|---|---|---|
+| `--excel / --no-excel` | ON | Génère `output/<slug>.xlsx` |
+| `--obsidian / --no-obsidian` | ON | Génère 1 note `.md` par post + 1 index groupé par ville |
+
+## Sentinelle phase 2 (technique)
+
+Le skill `instatrip-analyze` écrit `data/.enriched.done` (ou `.enriched.done.<worker_id>` en mode parallèle) avec :
+
+```json
+{
+  "status": "ok" | "error",
+  "processed": <int>,
+  "skipped": <int>,
+  "failed": <int>,
+  "failures": [{"shortcode": "...", "error": "..."}],
+  "finished_at": "<ISO8601 UTC Z>"
+}
+```
+
+Le runner Python lit, consomme (`unlink`), et agrège les stats. Permet aussi le mode hors-CC : lancer manuellement `claude` dans le projet et invoquer le skill.
+
+## Limitations connues
+
+- **Compatibilité OCR EasyOCR** : `["en", "ja"]` uniquement (le français n'est pas combinable avec le japonais — limitation EasyOCR). Le texte français passe via la transcription Whisper et la caption IG.
+- **Posts inaccessibles** : ~5-10 % des shortcodes d'une collection peuvent être indisponibles (compte privé, post supprimé, erreur IG temporaire). Échec silencieux par post, le pipeline continue.
+- **Rate limit Instagram** : 1 session Playwright + 1 stream yt-dlp à la fois — la parallélisation phase 1 risquerait un ban.
+- **Console Windows cp1252** : les emojis Rich peuvent crasher PowerShell 5.1. Workaround : `$env:PYTHONIOENCODING="utf-8"` avant chaque commande.
+
+## Outputs
+
+- `output/<slug>.xlsx` : 1 ligne par post (Shortcode, URL, Catégorie, Titre, Ville, Quartier, Description, Activité, Tags)
+- `output/obsidian/<shortcode>.md` : 1 note avec frontmatter YAML + wikilink `[[Ville]]`
+- `output/obsidian/<slug>.md` : index groupé par ville + section Tips
