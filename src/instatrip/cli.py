@@ -51,10 +51,11 @@ def scrape(force: bool = typer.Option(False, help="Force re-download")):
 @app.command()
 def interpret(
     trip_context: str = typer.Option("", help="Contexte du voyage (ex: 'Voyage Japon 2026')"),
+    workers: int = typer.Option(1, help="Nombre de claude -p en parallèle (1 = séquentiel)"),
 ):
     """Phase 2 (V0) : spawn Claude Code headless avec le skill instatrip-analyze."""
     s = Settings.load()
-    run_analysis(project_root=s.project_root, trip_context=trip_context)
+    run_analysis(project_root=s.project_root, trip_context=trip_context, n_workers=workers)
 
 
 @app.command()
@@ -80,11 +81,12 @@ def export(
 def run(
     url: str = typer.Option(None),
     trip_context: str = typer.Option(""),
+    workers: int = typer.Option(1, help="Workers parallèles pour l'étape interpret"),
 ):
     """Pipeline complet : collect → scrape → interpret → export."""
     collect(url=url)
     scrape(force=False)
-    interpret(trip_context=trip_context)
+    interpret(trip_context=trip_context, workers=workers)
     export(excel=True, obsidian=True)
 
 

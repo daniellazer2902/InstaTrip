@@ -25,9 +25,12 @@ Pour chaque fichier `data/raw/<shortcode>.json` du projet courant, produire `dat
 
 ## Procédure (à exécuter de manière déterministe)
 
-1. **Lire le contexte voyage** depuis l'argument fourni à l'invocation (ex: "Voyage Japon 2026"). S'il est absent, déduire depuis le nom de la collection.
-2. **Lister** les fichiers `data/raw/*.json`.
-3. **Filtrer** ceux qui ont déjà un `data/enriched/<shortcode>.json` à jour — les sauter (idempotence).
+1. **Lire les arguments d'invocation** :
+   - **Trip context** (ex: "Voyage Japon 2026") — à défaut, déduire depuis le nom de la collection.
+   - **Worker ID** (optionnel, entier) — si fourni, la sentinelle finale est `data/.enriched.done.<worker_id>` au lieu de `data/.enriched.done`.
+   - **Shortcodes** (optionnel, liste explicite) — si fournie, ne traiter QUE ces shortcodes. Sinon, traiter tous les `data/raw/*.json`.
+2. **Lister** les fichiers à traiter : la liste fournie OU `data/raw/*.json`.
+3. **Filtrer** ceux qui ont déjà un `data/enriched/<shortcode>.json` — les compter dans `skipped` (idempotence).
 4. **Pour chaque post restant** :
    - Lire le JSON brut (champs : caption, pinned_comment, transcript, ocr_text, author, url, media_type).
    - Classifier : `lieu` (resto, hôtel, point d'intérêt précis), `tips` (conseils généraux non liés à un lieu unique), `activite` (expérience à faire), `autre` (non exploitable).
@@ -35,7 +38,7 @@ Pour chaque fichier `data/raw/<shortcode>.json` du projet courant, produire `dat
    - Description : 1 à 3 phrases en français, factuelle, mentionne le "plus" / l'intérêt principal.
    - Tags : 2 à 5 mots-clés courts en kebab-case français (`ramen`, `vue-panoramique`, `petit-dejeuner`).
    - Écrire `data/enriched/<shortcode>.json` (JSON pretty-printed, UTF-8).
-5. **Sentinelle de fin** : écrire `data/.enriched.done` avec :
+5. **Sentinelle de fin** : écrire `data/.enriched.done` (ou `data/.enriched.done.<worker_id>` si worker_id fourni) avec :
 
 ```json
 {

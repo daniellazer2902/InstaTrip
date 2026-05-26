@@ -53,3 +53,59 @@ def test_run_analysis_raises_on_error_status(tmp_path):
     with patch("instatrip.interpret_runner.subprocess.run", side_effect=fake_run):
         with pytest.raises(SentinelError, match="data/raw missing"):
             run_analysis(project_root=tmp_path, trip_context="x")
+
+
+def test_run_analysis_parallel_aggregates_buckets(tmp_path):
+    raw = tmp_path / "data" / "raw"
+    raw.mkdir(parents=True)
+    for sc in ["A", "B", "C", "D", "E"]:
+        (raw / f"{sc}.json").write_text("{}", encoding="utf-8")
+
+    spawned: list[int] = []
+
+    def fake_popen(cmd, cwd):
+        prompt = cmd[2]
+        worker_id = int(prompt.split("Worker ID: ")[1].split(".")[0])
+        spawned.append(worker_id)
+        sentinel = tmp_path / "data" / f".enriched.done.{worker_id}"
+        sentinel.write_text(
+            json.dumps({
+                "status": "ok",
+                "processed": 2 if worker_id == 0 else 1,
+                "skipped": 0,
+                "failed": 0,
+                "failures": [],
+                "finished_at": "2026-05-26T10:00:00Z",
+            }),
+            encoding="utf-8",
+        )
+
+        class P:
+            def wait(self, timeout=None):
+                return 0
+        return P()
+
+    with patch("instatrip.interpret_runner.subprocess.Popen", side_effect=fake_popen):
+        stats = run_analysis(
+            project_root=tmp_path, trip_context="Japon", n_workers=4
+        )
+
+    assert stats["status"] == "ok"
+    assert stats["processed"] == 5
+    assert sorted(spawned) == [0, 1, 2, 3]
+    for wid in range(4):
+        assert not (tmp_path / "data" / f".enriched.done.{wid}").exists()
+
+
+def test_run_analysis_parallel_no_raw_files(tmp_path):
+    (tmp_path / "data" / "raw").mkdir(parents=True)
+    with patch("instatrip.interpret_runner.subprocess.Popen") as popen_mock:
+        stats = run_analysis(project_root=tmp_path, n_workers=4)
+    assert stats == {
+        "status": "ok",
+        "processed": 0,
+        "skipped": 0,
+        "failed": 0,
+        "failures": [],
+    }
+    popen_mock.assert_not_called()
