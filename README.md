@@ -2,6 +2,41 @@
 
 Pipeline Instagram saved → Excel + Obsidian pour analyser **n'importe quelle collection thématique** (voyage, recettes, sport…) à partir d'un dossier IG "Enregistrements".
 
+## Organisation multi-collections
+
+Chaque collection vit dans son propre sous-dossier :
+
+```
+INstaTrip/
+├── .env                            # config par défaut (slug, profile, url)
+├── .secrets/ig_state.json          # session IG (PARTAGÉE entre toutes les collections)
+└── collections/
+    ├── japon-2026/                 # une collection voyage
+    │   ├── .env                    # (optionnel) override de la config racine
+    │   ├── data/
+    │   │   ├── raw/
+    │   │   ├── enriched/
+    │   │   ├── media/
+    │   │   └── shortcodes.json
+    │   └── output/
+    │       ├── japon-2026.xlsx
+    │       └── obsidian/
+    │           ├── *.md
+    │           └── japon-2026.base
+    ├── recettes-asiatiques/        # une collection recettes
+    │   └── ...
+    └── pull-ups-progression/       # une collection sport
+        └── ...
+```
+
+Sélection de la collection active :
+- via env : `COLLECTION_SLUG=japon-2026` dans `.env`
+- via CLI : `--collection japon-2026` sur n'importe quelle commande (override)
+
+Lister les collections existantes : `uv run instatrip collections`.
+
+Migration one-shot depuis l'ancienne structure (flat `data/` + `output/` au root) : `uv run instatrip migrate <slug>`.
+
 ## Profils d'analyse
 
 Chaque profil = un domaine (catégories possibles, attributs extraits, template Obsidian Base adapté). Profils livrés :

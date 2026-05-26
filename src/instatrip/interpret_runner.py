@@ -53,26 +53,33 @@ def _build_worker_prompt(
 
 
 def run_analysis(
-    project_root: Path,
+    collection_root: Path | None = None,
     trip_context: str = "",
     n_workers: int = 1,
     timeout_seconds: int = 60 * 60,
     profile_name: str = "voyage",
+    project_root: Path | None = None,
 ) -> dict:
     """Spawn `claude -p` en headless avec le skill instatrip-analyze.
 
+    - collection_root : dossier qui contient `data/` (typiquement `collections/<slug>/`).
+      Le subprocess `claude -p` est lancé avec cwd = collection_root.
     - n_workers=1 (défaut) : un seul process, sentinelle `data/.enriched.done`.
     - n_workers>1 : split des raw JSONs en N buckets, N process parallèles,
       sentinelles `data/.enriched.done.<wid>`, stats agrégées.
     - profile_name : profil d'analyse (voyage / recettes / sport / ...).
+    - project_root : alias backward-compat de collection_root (deprecated).
     """
+    root = collection_root or project_root
+    if root is None:
+        raise ValueError("collection_root requis")
     if n_workers <= 1:
-        return _run_single(project_root, trip_context, timeout_seconds, profile_name)
-    return _run_parallel(project_root, trip_context, n_workers, timeout_seconds, profile_name)
+        return _run_single(root, trip_context, timeout_seconds, profile_name)
+    return _run_parallel(root, trip_context, n_workers, timeout_seconds, profile_name)
 
 
-def _run_single(project_root: Path, trip_context: str, timeout_seconds: int, profile_name: str) -> dict:
-    sentinel = project_root / "data" / SENTINEL_NAME
+def _run_single(collection_root: Path, trip_context: str, timeout_seconds: int, profile_name: str) -> dict:
+    sentinel = collection_root / "data" / SENTINEL_NAME
     if sentinel.exists():
         sentinel.unlink()
 
@@ -80,7 +87,7 @@ def _run_single(project_root: Path, trip_context: str, timeout_seconds: int, pro
     console.print("[cyan]→ claude -p (skill instatrip-analyze)")
     subprocess.run(
         ["claude", "-p", prompt],
-        cwd=str(project_root),
+        cwd=str(collection_root),
         timeout=timeout_seconds,
         check=False,
     )
@@ -102,9 +109,9 @@ def _run_single(project_root: Path, trip_context: str, timeout_seconds: int, pro
 
 
 def _run_parallel(
-    project_root: Path, trip_context: str, n_workers: int, timeout_seconds: int, profile_name: str
+    collection_root: Path, trip_context: str, n_workers: int, timeout_seconds: int, profile_name: str
 ) -> dict:
-    raw_dir = project_root / "data" / "raw"
+    raw_dir = collection_root / "data" / "raw"
     shortcodes = sorted(f.stem for f in raw_dir.glob("*.json"))
     if not shortcodes:
         return {
@@ -119,7 +126,7 @@ def _run_parallel(
     buckets = [b for b in buckets if b]
 
     for wid in range(len(buckets)):
-        s = project_root / "data" / f"{SENTINEL_NAME}.{wid}"
+        s = collection_root / "data" / f"{SENTINEL_NAME}.{wid}"
         if s.exists():
             s.unlink()
 
@@ -132,7 +139,7 @@ def _run_parallel(
         prompt = _build_worker_prompt(trip_context, wid, bucket, profile_name)
         p = subprocess.Popen(
             ["claude", "-p", prompt],
-            cwd=str(project_root),
+            cwd=str(collection_root),
         )
         procs.append(p)
 
@@ -151,7 +158,7 @@ def _run_parallel(
         "failures": [],
     }
     for wid in range(len(buckets)):
-        s = project_root / "data" / f"{SENTINEL_NAME}.{wid}"
+        s = collection_root / "data" / f"{SENTINEL_NAME}.{wid}"
         if not s.exists():
             raise SentinelError(f"Sentinelle worker {wid} absente : {s}")
         payload = json.loads(s.read_text(encoding="utf-8"))

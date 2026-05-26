@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import typer
@@ -19,39 +20,45 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
 
 
+def _collection_opt():
+    return typer.Option(None, help="Slug de la collection (sous-dossier collections/<slug>/). Override env COLLECTION_SLUG.")
+
+
 @app.command()
 def auth():
-    """Connexion Instagram (1 fois). Sauvegarde la session."""
+    """Connexion Instagram (1 fois). Sauvegarde la session (partagée par toutes les collections)."""
     s = Settings.load()
     login_and_save_state(s.state_path)
 
 
 @app.command()
-def collect(url: str = typer.Option(None, help="URL de la collection (défaut: env COLLECTION_URL)")):
+def collect(
+    url: str = typer.Option(None, help="URL de la collection (défaut: env COLLECTION_URL)"),
+    collection: str = _collection_opt(),
+):
     """Scrolle la collection et écrit la liste des shortcodes."""
-    s = Settings.load()
+    s = Settings.load(collection=collection)
     target = url or s.collection_url
     if not target:
         raise typer.BadParameter("Fournir --url ou définir COLLECTION_URL dans .env")
     codes = collect_shortcodes(target, s.state_path)
-    out = s.project_root / "data" / f"{s.collection_slug}-shortcodes.json"
-    out.write_text(json.dumps(codes, indent=2), encoding="utf-8")
-    console.print(f"[green]✓ {len(codes)} shortcodes → {out}")
+    s.shortcodes_file.write_text(json.dumps(codes, indent=2), encoding="utf-8")
+    console.print(f"[green]✓ {len(codes)} shortcodes → {s.shortcodes_file}")
 
 
 @app.command()
 def scrape(
     force: bool = typer.Option(False, help="Force re-download"),
-    frame_interval: float = typer.Option(2.0, help="Intervalle (s) entre frames OCR. 1.0 = 2× plus de frames, +50% temps."),
-    ocr_confidence: float = typer.Option(0.4, help="Seuil de confiance EasyOCR (0-1). Plus haut = moins de bruit."),
+    frame_interval: float = typer.Option(2.0, help="Intervalle (s) entre frames OCR."),
+    ocr_confidence: float = typer.Option(0.4, help="Seuil de confiance EasyOCR (0-1)."),
     frame_dedup: bool = typer.Option(True, help="Dédup les frames quasi-identiques (dHash) avant OCR."),
-    dedup_threshold: int = typer.Option(6, help="Distance Hamming max pour dédup (0-64). Plus bas = plus strict."),
-    dedup_mode: str = typer.Option("bands", help="'bands' (top+bottom 30%, cible overlays texte IG) ou 'full' (image entière)."),
+    dedup_threshold: int = typer.Option(6, help="Distance Hamming max pour dédup (0-64)."),
+    dedup_mode: str = typer.Option("bands", help="'bands' (top+bottom 30%) ou 'full' (image entière)."),
+    collection: str = _collection_opt(),
 ):
     """Phase 1 : extraction brute pour chaque shortcode."""
-    s = Settings.load()
-    codes_file = s.project_root / "data" / f"{s.collection_slug}-shortcodes.json"
-    codes = json.loads(codes_file.read_text(encoding="utf-8"))
+    s = Settings.load(collection=collection)
+    codes = json.loads(s.shortcodes_file.read_text(encoding="utf-8"))
     extract_all(
         codes, s, force=force,
         frame_interval=frame_interval,
@@ -64,15 +71,16 @@ def scrape(
 
 @app.command()
 def interpret(
-    trip_context: str = typer.Option("", help="Contexte (ex: 'Voyage Japon 2026', 'Recettes asiatiques')"),
+    trip_context: str = typer.Option("", help="Contexte (ex: 'Voyage Japon 2026')"),
     workers: int = typer.Option(1, help="Nombre de claude -p en parallèle (1 = séquentiel)"),
     profile: str = typer.Option(None, help="Profil d'analyse (override env COLLECTION_PROFILE)"),
+    collection: str = _collection_opt(),
 ):
-    """Phase 2 (V0) : spawn Claude Code headless avec le skill instatrip-analyze."""
-    s = Settings.load()
+    """Phase 2 : spawn Claude Code headless avec le skill instatrip-analyze."""
+    s = Settings.load(collection=collection)
     profile_name = profile or s.collection_profile
     run_analysis(
-        project_root=s.project_root,
+        collection_root=s.collection_root,
         trip_context=trip_context,
         n_workers=workers,
         profile_name=profile_name,
@@ -84,9 +92,10 @@ def export(
     excel: bool = typer.Option(True),
     obsidian: bool = typer.Option(True),
     profile: str = typer.Option(None, help="Profil d'export (override env COLLECTION_PROFILE)"),
+    collection: str = _collection_opt(),
 ):
     """Exporte les insights enrichis vers Excel et/ou Obsidian."""
-    s = Settings.load()
+    s = Settings.load(collection=collection)
     profile_name = profile or s.collection_profile
     insights: list[PostInsight] = []
     for p in sorted(s.enriched_dir.glob("*.json")):
@@ -105,15 +114,17 @@ def run(
     url: str = typer.Option(None),
     trip_context: str = typer.Option(""),
     workers: int = typer.Option(1, help="Workers parallèles pour l'étape interpret"),
-    frame_interval: float = typer.Option(2.0, help="Intervalle (s) entre frames OCR"),
-    ocr_confidence: float = typer.Option(0.4, help="Seuil de confiance EasyOCR"),
-    profile: str = typer.Option(None, help="Profil d'analyse (override env COLLECTION_PROFILE)"),
+    frame_interval: float = typer.Option(2.0),
+    ocr_confidence: float = typer.Option(0.4),
+    profile: str = typer.Option(None, help="Profil d'analyse"),
+    collection: str = _collection_opt(),
 ):
     """Pipeline complet : collect → scrape → interpret → export."""
-    collect(url=url)
-    scrape(force=False, frame_interval=frame_interval, ocr_confidence=ocr_confidence, frame_dedup=True, dedup_threshold=6)
-    interpret(trip_context=trip_context, workers=workers, profile=profile)
-    export(excel=True, obsidian=True, profile=profile)
+    collect(url=url, collection=collection)
+    scrape(force=False, frame_interval=frame_interval, ocr_confidence=ocr_confidence,
+           frame_dedup=True, dedup_threshold=6, dedup_mode="bands", collection=collection)
+    interpret(trip_context=trip_context, workers=workers, profile=profile, collection=collection)
+    export(excel=True, obsidian=True, profile=profile, collection=collection)
 
 
 @app.command()
@@ -126,6 +137,56 @@ def profiles():
         console.print(f"  catégories : {', '.join(p.categories)}")
         console.print(f"  attributs  : {', '.join(k for k, _ in p.attribute_fields)}")
         console.print("")
+
+
+@app.command()
+def collections():
+    """Liste les collections présentes dans collections/."""
+    root = Path.cwd() / "collections"
+    if not root.exists():
+        console.print("[yellow]Aucune collection (dossier 'collections/' absent).")
+        return
+    for sub in sorted(root.iterdir()):
+        if not sub.is_dir():
+            continue
+        raw_count = len(list((sub / "data" / "raw").glob("*.json"))) if (sub / "data" / "raw").exists() else 0
+        enr_count = len(list((sub / "data" / "enriched").glob("*.json"))) if (sub / "data" / "enriched").exists() else 0
+        console.print(f"[cyan]{sub.name}[/cyan]  raw={raw_count}  enriched={enr_count}")
+
+
+@app.command()
+def migrate(
+    to: str = typer.Argument(..., help="Slug cible (ex: japon-2026). Les fichiers data/ et output/ y sont déplacés."),
+):
+    """Migration one-shot : déplace l'ancienne structure (data/, output/) vers collections/<slug>/."""
+    root = Path.cwd()
+    target = root / "collections" / to
+    if target.exists() and any(target.iterdir()):
+        raise typer.BadParameter(f"{target} existe déjà et n'est pas vide.")
+    target.mkdir(parents=True, exist_ok=True)
+
+    moved: list[str] = []
+    old_data = root / "data"
+    old_output = root / "output"
+    if old_data.exists():
+        shutil.move(str(old_data), str(target / "data"))
+        moved.append("data/")
+    if old_output.exists():
+        shutil.move(str(old_output), str(target / "output"))
+        moved.append("output/")
+
+    # renomme l'ancien <slug>-shortcodes.json → shortcodes.json
+    old_sc = target / "data" / f"{to}-shortcodes.json"
+    new_sc = target / "data" / "shortcodes.json"
+    if old_sc.exists() and not new_sc.exists():
+        old_sc.rename(new_sc)
+        moved.append(f"{to}-shortcodes.json → shortcodes.json")
+
+    if not moved:
+        console.print("[yellow]Rien à migrer.")
+        return
+    console.print(f"[green]✓ Migration vers collections/{to}/ : {', '.join(moved)}")
+    console.print("[dim]N'oublie pas : mets à jour .env avec COLLECTION_SLUG si besoin.")
 
 
 if __name__ == "__main__":
