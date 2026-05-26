@@ -7,7 +7,7 @@ from pathlib import Path
 @lru_cache(maxsize=1)
 def _reader():
     import easyocr
-    return easyocr.Reader(["en", "fr", "ja"], gpu=False)
+    return easyocr.Reader(["en", "ja"], gpu=False)
 
 
 def ocr_images(paths: list[Path], min_confidence: float = 0.4) -> list[str]:

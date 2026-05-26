@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 from rich.console import Console
@@ -65,8 +66,22 @@ def extract_one(shortcode: str, settings: Settings, force: bool = False) -> RawP
         author=page.get("author"),
     )
     out.write_text(post.model_dump_json(indent=2), encoding="utf-8")
+    _cleanup_media(settings.media_dir, shortcode)
     console.print(f"[green]✓ {shortcode} saved")
     return post
+
+
+def _cleanup_media(media_dir: Path, shortcode: str) -> None:
+    """Supprime les médias intermédiaires (mp4/wav/jpg/frames) une fois
+    le JSON brut écrit. Le JSON reste la source de vérité."""
+    for f in media_dir.glob(f"{shortcode}.*"):
+        try:
+            f.unlink()
+        except OSError:
+            pass
+    frames_dir = media_dir / f"{shortcode}_frames"
+    if frames_dir.exists():
+        shutil.rmtree(frames_dir, ignore_errors=True)
 
 
 def extract_all(shortcodes: list[str], settings: Settings, force: bool = False) -> list[RawPost]:
