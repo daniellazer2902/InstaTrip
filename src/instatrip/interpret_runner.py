@@ -33,6 +33,9 @@ def run_analysis(
     """Spawn `claude -p` en headless avec le prompt qui invoque le skill
     instatrip-analyze. Attend la sentinelle, la lit, la supprime, la retourne."""
     sentinel = project_root / "data" / SENTINEL_NAME
+    if sentinel.exists():
+        sentinel.unlink()
+
     prompt = _build_prompt(trip_context)
     console.print(f"[cyan]→ claude -p (skill instatrip-analyze)")
     subprocess.run(

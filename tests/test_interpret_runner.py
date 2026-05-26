@@ -41,11 +41,15 @@ def test_run_analysis_raises_on_error_status(tmp_path):
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     sentinel = data_dir / ".enriched.done"
-    sentinel.write_text(json.dumps({"status": "error", "error": "data/raw missing"}), encoding="utf-8")
 
     def fake_run(cmd, cwd, timeout, check):
+        sentinel.write_text(
+            json.dumps({"status": "error", "error": "data/raw missing"}),
+            encoding="utf-8",
+        )
         class R: returncode = 0
         return R()
+
     with patch("instatrip.interpret_runner.subprocess.run", side_effect=fake_run):
         with pytest.raises(SentinelError, match="data/raw missing"):
             run_analysis(project_root=tmp_path, trip_context="x")
