@@ -40,12 +40,20 @@ def collect(url: str = typer.Option(None, help="URL de la collection (défaut: e
 
 
 @app.command()
-def scrape(force: bool = typer.Option(False, help="Force re-download")):
+def scrape(
+    force: bool = typer.Option(False, help="Force re-download"),
+    frame_interval: float = typer.Option(2.0, help="Intervalle (s) entre frames OCR. 1.0 = 2× plus de frames, +50% temps."),
+    ocr_confidence: float = typer.Option(0.4, help="Seuil de confiance EasyOCR (0-1). Plus haut = moins de bruit."),
+):
     """Phase 1 : extraction brute pour chaque shortcode."""
     s = Settings.load()
     codes_file = s.project_root / "data" / f"{s.collection_slug}-shortcodes.json"
     codes = json.loads(codes_file.read_text(encoding="utf-8"))
-    extract_all(codes, s, force=force)
+    extract_all(
+        codes, s, force=force,
+        frame_interval=frame_interval,
+        ocr_min_confidence=ocr_confidence,
+    )
 
 
 @app.command()
@@ -82,10 +90,12 @@ def run(
     url: str = typer.Option(None),
     trip_context: str = typer.Option(""),
     workers: int = typer.Option(1, help="Workers parallèles pour l'étape interpret"),
+    frame_interval: float = typer.Option(2.0, help="Intervalle (s) entre frames OCR"),
+    ocr_confidence: float = typer.Option(0.4, help="Seuil de confiance EasyOCR"),
 ):
     """Pipeline complet : collect → scrape → interpret → export."""
     collect(url=url)
-    scrape(force=False)
+    scrape(force=False, frame_interval=frame_interval, ocr_confidence=ocr_confidence)
     interpret(trip_context=trip_context, workers=workers)
     export(excel=True, obsidian=True)
 

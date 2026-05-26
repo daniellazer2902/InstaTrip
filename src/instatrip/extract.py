@@ -20,9 +20,19 @@ def _raw_path(settings: Settings, shortcode: str) -> Path:
     return settings.raw_dir / f"{shortcode}.json"
 
 
-def extract_one(shortcode: str, settings: Settings, force: bool = False) -> RawPost:
+def extract_one(
+    shortcode: str,
+    settings: Settings,
+    force: bool = False,
+    frame_interval: float = 2.0,
+    ocr_min_confidence: float = 0.4,
+) -> RawPost:
     """Pipeline phase 1 pour un post. Idempotent : si le JSON existe
-    déjà, on le relit (sauf si force=True)."""
+    déjà, on le relit (sauf si force=True).
+
+    - frame_interval : intervalle en secondes entre les frames échantillonnées
+      pour l'OCR (défaut 2.0). Plus petit = plus de frames = plus de temps OCR.
+    - ocr_min_confidence : seuil de confiance EasyOCR (défaut 0.4)."""
     out = _raw_path(settings, shortcode)
     if out.exists() and not force:
         console.print(f"[dim]cache hit: {shortcode}")
@@ -43,13 +53,13 @@ def extract_one(shortcode: str, settings: Settings, force: bool = False) -> RawP
         transcript = transcribe(wav)
 
         frames_dir = settings.media_dir / f"{shortcode}_frames"
-        frames = sample_frames(media["video_path"], frames_dir)
+        frames = sample_frames(media["video_path"], frames_dir, every_seconds=frame_interval)
         if frames:
             console.print(f"[cyan]→ {shortcode}: OCR {len(frames)} frames")
-            ocr_text = ocr_images(frames)
+            ocr_text = ocr_images(frames, min_confidence=ocr_min_confidence)
     elif media["image_paths"]:
         console.print(f"[cyan]→ {shortcode}: OCR image(s)")
-        ocr_text = ocr_images(media["image_paths"])
+        ocr_text = ocr_images(media["image_paths"], min_confidence=ocr_min_confidence)
 
     media_type = MediaType.REEL if media["video_path"] else MediaType.IMAGE
     if len(media["image_paths"]) > 1 and not media["video_path"]:
@@ -84,11 +94,21 @@ def _cleanup_media(media_dir: Path, shortcode: str) -> None:
         shutil.rmtree(frames_dir, ignore_errors=True)
 
 
-def extract_all(shortcodes: list[str], settings: Settings, force: bool = False) -> list[RawPost]:
+def extract_all(
+    shortcodes: list[str],
+    settings: Settings,
+    force: bool = False,
+    frame_interval: float = 2.0,
+    ocr_min_confidence: float = 0.4,
+) -> list[RawPost]:
     results: list[RawPost] = []
     for sc in shortcodes:
         try:
-            results.append(extract_one(sc, settings, force=force))
+            results.append(extract_one(
+                sc, settings, force=force,
+                frame_interval=frame_interval,
+                ocr_min_confidence=ocr_min_confidence,
+            ))
         except Exception as e:
             console.print(f"[red]✗ {sc}: {e}")
     return results
