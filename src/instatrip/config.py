@@ -13,6 +13,7 @@ class Settings:
     anthropic_model: str
     collection_url: str
     collection_slug: str
+    collection_profile: str
     project_root: Path
     raw_dir: Path
     enriched_dir: Path
@@ -38,6 +39,7 @@ class Settings:
             anthropic_model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
             collection_url=os.environ.get("COLLECTION_URL", ""),
             collection_slug=os.environ.get("COLLECTION_SLUG", "collection"),
+            collection_profile=os.environ.get("COLLECTION_PROFILE", "voyage"),
             project_root=root,
             raw_dir=raw,
             enriched_dir=enriched,

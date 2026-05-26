@@ -1,6 +1,22 @@
 # InstaTrip
 
-Pipeline Instagram saved → Excel + Obsidian pour préparer un voyage à partir d'une collection IG "Enregistrements".
+Pipeline Instagram saved → Excel + Obsidian pour analyser **n'importe quelle collection thématique** (voyage, recettes, sport…) à partir d'un dossier IG "Enregistrements".
+
+## Profils d'analyse
+
+Chaque profil = un domaine (catégories possibles, attributs extraits, template Obsidian Base adapté). Profils livrés :
+
+| Profil | Catégories | Attributs extraits |
+|---|---|---|
+| `voyage` (défaut) | lieu, tips, activite, autre | city, neighborhood, activity |
+| `recettes` | plat, dessert, boisson, technique, ingredient, autre | cuisine, difficulte, temps, ingredients_cles |
+| `sport` | cardio, musculation, mobilite, technique, programme, autre | groupe_musculaire, equipement, niveau, duree |
+
+Lister les profils dispos : `uv run instatrip profiles`.
+
+Sélectionner un profil : `COLLECTION_PROFILE=recettes` dans `.env`, ou `--profile recettes` en CLI sur `interpret` / `export` / `run`.
+
+Chaque profil génère son **propre `.base` Obsidian** avec des vues adaptées (ex: recettes filtre par cuisine/difficulté, sport groupe par muscle/matériel). Tu peux ajouter un nouveau profil en créant `src/instatrip/profiles/<nom>.py` (voir `voyage.py` comme template).
 
 ## Prérequis
 

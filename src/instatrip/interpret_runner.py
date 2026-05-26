@@ -6,6 +6,8 @@ from pathlib import Path
 
 from rich.console import Console
 
+from .profiles import get as get_profile
+
 console = Console()
 
 SENTINEL_NAME = ".enriched.done"
@@ -15,21 +17,32 @@ class SentinelError(RuntimeError):
     pass
 
 
-def _build_prompt(trip_context: str) -> str:
+def _profile_block(profile_name: str, trip_context: str) -> str:
+    profile = get_profile(profile_name)
+    return (
+        f"Profile: {profile.name} — {profile.description}.\n"
+        f"Domain-specific instruction:\n{profile.llm_instruction}\n"
+        f"User context: {trip_context or '(none)'}.\n"
+    )
+
+
+def _build_prompt(trip_context: str, profile_name: str = "voyage") -> str:
     return (
         "Invoke the skill instatrip-analyze for the current project. "
-        f"Trip context: {trip_context or '(none)'}.\n"
-        "Process all data/raw/*.json, write data/enriched/<shortcode>.json "
+        + _profile_block(profile_name, trip_context)
+        + "Process all data/raw/*.json, write data/enriched/<shortcode>.json "
         "for each, then write the sentinel data/.enriched.done with the stats JSON "
         "as described in the skill. Do not stop before writing the sentinel."
     )
 
 
-def _build_worker_prompt(trip_context: str, worker_id: int, shortcodes: list[str]) -> str:
+def _build_worker_prompt(
+    trip_context: str, worker_id: int, shortcodes: list[str], profile_name: str = "voyage"
+) -> str:
     return (
         "Invoke the skill instatrip-analyze for the current project. "
-        f"Trip context: {trip_context or '(none)'}. "
-        f"Worker ID: {worker_id}. "
+        + _profile_block(profile_name, trip_context)
+        + f"Worker ID: {worker_id}. "
         f"Shortcodes à traiter (seulement ceux-là) : {', '.join(shortcodes)}.\n"
         "Pour chaque shortcode listé, lire data/raw/<shortcode>.json et "
         "écrire data/enriched/<shortcode>.json. "
@@ -44,24 +57,26 @@ def run_analysis(
     trip_context: str = "",
     n_workers: int = 1,
     timeout_seconds: int = 60 * 60,
+    profile_name: str = "voyage",
 ) -> dict:
     """Spawn `claude -p` en headless avec le skill instatrip-analyze.
 
     - n_workers=1 (défaut) : un seul process, sentinelle `data/.enriched.done`.
     - n_workers>1 : split des raw JSONs en N buckets, N process parallèles,
       sentinelles `data/.enriched.done.<wid>`, stats agrégées.
+    - profile_name : profil d'analyse (voyage / recettes / sport / ...).
     """
     if n_workers <= 1:
-        return _run_single(project_root, trip_context, timeout_seconds)
-    return _run_parallel(project_root, trip_context, n_workers, timeout_seconds)
+        return _run_single(project_root, trip_context, timeout_seconds, profile_name)
+    return _run_parallel(project_root, trip_context, n_workers, timeout_seconds, profile_name)
 
 
-def _run_single(project_root: Path, trip_context: str, timeout_seconds: int) -> dict:
+def _run_single(project_root: Path, trip_context: str, timeout_seconds: int, profile_name: str) -> dict:
     sentinel = project_root / "data" / SENTINEL_NAME
     if sentinel.exists():
         sentinel.unlink()
 
-    prompt = _build_prompt(trip_context)
+    prompt = _build_prompt(trip_context, profile_name)
     console.print("[cyan]→ claude -p (skill instatrip-analyze)")
     subprocess.run(
         ["claude", "-p", prompt],
@@ -87,7 +102,7 @@ def _run_single(project_root: Path, trip_context: str, timeout_seconds: int) -> 
 
 
 def _run_parallel(
-    project_root: Path, trip_context: str, n_workers: int, timeout_seconds: int
+    project_root: Path, trip_context: str, n_workers: int, timeout_seconds: int, profile_name: str
 ) -> dict:
     raw_dir = project_root / "data" / "raw"
     shortcodes = sorted(f.stem for f in raw_dir.glob("*.json"))
@@ -114,7 +129,7 @@ def _run_parallel(
     )
     procs: list[subprocess.Popen] = []
     for wid, bucket in enumerate(buckets):
-        prompt = _build_worker_prompt(trip_context, wid, bucket)
+        prompt = _build_worker_prompt(trip_context, wid, bucket, profile_name)
         p = subprocess.Popen(
             ["claude", "-p", prompt],
             cwd=str(project_root),

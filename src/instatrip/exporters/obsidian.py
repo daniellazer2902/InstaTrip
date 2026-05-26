@@ -2,143 +2,90 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
-from ..models import Category, PostInsight
+from ..models import PostInsight
+from ..profiles import get as get_profile
 
 
-def _note(insight: PostInsight) -> str:
+def _frontmatter_value(v: Any) -> str:
+    """Sérialise une valeur pour la frontmatter YAML (str safe)."""
+    if v is None:
+        return ""
+    if isinstance(v, list):
+        return "[" + ", ".join(str(x) for x in v) + "]"
+    s = str(v)
+    if any(c in s for c in (':', '#', '"', "'", '\n')) or s.startswith(('!', '?', '|', '>')):
+        safe = s.replace('"', '\\"')
+        return f'"{safe}"'
+    return s
+
+
+def _note(insight: PostInsight, attribute_fields: list[tuple[str, str]]) -> str:
     safe_title = insight.title.replace('"', '\\"')
     fm = [
         "---",
         f"shortcode: {insight.shortcode}",
         f'title: "{safe_title}"',
-        f"category: {insight.category.value}",
-        f"city: {insight.city or ''}",
-        f"neighborhood: {insight.neighborhood or ''}",
-        f"tags: [{', '.join(insight.tags)}]",
-        f"url: {insight.url}",
-        "---",
-        "",
-        f"# {insight.title}",
-        "",
-        insight.description,
-        "",
+        f"category: {insight.category}",
     ]
-    if insight.city:
-        fm.append(f"Ville : [[{insight.city}]]")
-    if insight.neighborhood:
-        fm.append(f"Quartier : {insight.neighborhood}")
-    if insight.activity:
-        fm.append(f"Activité : {insight.activity}")
+    for key, _label in attribute_fields:
+        val = insight.attributes.get(key)
+        fm.append(f"{key}: {_frontmatter_value(val) if val else ''}")
+    fm.append(f"tags: [{', '.join(insight.tags)}]")
+    fm.append(f"url: {insight.url}")
+    fm.append("---")
+    fm.append("")
+    fm.append(f"# {insight.title}")
+    fm.append("")
+    fm.append(insight.description)
+    fm.append("")
+    for key, label in attribute_fields:
+        val = insight.attributes.get(key)
+        if val:
+            if key == "city":
+                fm.append(f"{label} : [[{val}]]")
+            else:
+                fm.append(f"{label} : {val}")
     fm.append("")
     fm.append(f"[Voir le post]({insight.url})")
     fm.append("")
     return "\n".join(fm)
 
 
-_BASE_TEMPLATE = """\
-filters:
-  and:
-    - 'shortcode != ""'
-
-formulas:
-  cat_icon: 'if(category == "lieu", "📍", if(category == "tips", "💡", if(category == "activite", "🎯", "📝")))'
-  ig_link: 'if(url, link(url, "↗ IG"), "")'
-
-properties:
-  formula.cat_icon:
-    displayName: ""
-  title:
-    displayName: Titre
-  category:
-    displayName: Catégorie
-  city:
-    displayName: Ville
-  neighborhood:
-    displayName: Quartier
-  formula.ig_link:
-    displayName: Lien
-
-views:
-  - type: cards
-    name: "🗾 Tout"
-    order: [formula.cat_icon, title, city, neighborhood]
-
-  - type: table
-    name: "📍 Lieux"
-    filters:
-      and: ['category == "lieu"']
-    groupBy: { property: city, direction: ASC }
-    order: [title, neighborhood, formula.ig_link]
-
-  - type: table
-    name: "💡 Tips"
-    filters:
-      and: ['category == "tips"']
-    order: [title, city, formula.ig_link]
-
-  - type: table
-    name: "🎯 Activités"
-    filters:
-      and: ['category == "activite"']
-    groupBy: { property: city, direction: ASC }
-    order: [title, neighborhood, formula.ig_link]
-
-  - type: table
-    name: "🗼 Tokyo"
-    filters:
-      and: ['city == "Tokyo"']
-    groupBy: { property: neighborhood, direction: ASC }
-    order: [formula.cat_icon, title, formula.ig_link]
-
-  - type: table
-    name: "🏯 Osaka"
-    filters:
-      and: ['city == "Osaka"']
-    groupBy: { property: neighborhood, direction: ASC }
-    order: [formula.cat_icon, title, formula.ig_link]
-
-  - type: table
-    name: "⛩️ Kyoto"
-    filters:
-      and: ['city == "Kyoto"']
-    groupBy: { property: neighborhood, direction: ASC }
-    order: [formula.cat_icon, title, formula.ig_link]
-
-  - type: table
-    name: "🗺️ Autres villes"
-    filters:
-      and:
-        - 'city != ""'
-        - 'city != "Tokyo"'
-        - 'city != "Osaka"'
-        - 'city != "Kyoto"'
-    groupBy: { property: city, direction: ASC }
-    order: [formula.cat_icon, title, neighborhood, formula.ig_link]
-"""
-
-
-def export_obsidian(insights: list[PostInsight], out_dir: Path, collection_slug: str) -> Path:
+def export_obsidian(
+    insights: list[PostInsight],
+    out_dir: Path,
+    collection_slug: str,
+    profile_name: str = "voyage",
+) -> Path:
+    profile = get_profile(profile_name)
     out_dir.mkdir(parents=True, exist_ok=True)
+
     for i in insights:
-        (out_dir / f"{i.shortcode}.md").write_text(_note(i), encoding="utf-8")
+        (out_dir / f"{i.shortcode}.md").write_text(
+            _note(i, profile.attribute_fields), encoding="utf-8"
+        )
 
     base_path = out_dir / f"{collection_slug}.base"
     if not base_path.exists():
-        base_path.write_text(_BASE_TEMPLATE, encoding="utf-8")
+        base_path.write_text(profile.base_template, encoding="utf-8")
 
-    by_city: dict[str, list[PostInsight]] = defaultdict(list)
-    tips: list[PostInsight] = []
+    # Index avec groupBy sur le 1er champ d'attribut (ville/cuisine/groupe_musculaire)
+    primary_key = profile.attribute_fields[0][0] if profile.attribute_fields else None
+    grouped: dict[str, list[PostInsight]] = defaultdict(list)
+    autres: list[PostInsight] = []
     for i in insights:
-        if i.category is Category.TIPS:
-            tips.append(i)
-        elif i.city:
-            by_city[i.city].append(i)
+        primary = i.attributes.get(primary_key) if primary_key else None
+        if primary:
+            grouped[str(primary)].append(i)
         else:
-            by_city["Sans ville"].append(i)
+            autres.append(i)
 
     lines = [
         f"# {collection_slug}",
+        "",
+        f"> Profil : **{profile.name}** — {profile.description}",
         "",
         f"> Vue base interactive (filtres dynamiques) : [[{collection_slug}.base]]",
         "",
@@ -146,18 +93,22 @@ def export_obsidian(insights: list[PostInsight], out_dir: Path, collection_slug:
         "",
         "---",
         "",
-        "## Index par ville (fallback)",
+        f"## Index par {profile.attribute_fields[0][1] if primary_key else 'catégorie'} (fallback)",
         "",
     ]
-    for city in sorted(by_city.keys()):
-        lines.append(f"## {city}")
-        for i in by_city[city]:
-            badge = f" ({i.neighborhood})" if i.neighborhood else ""
+    for key in sorted(grouped.keys()):
+        lines.append(f"## {key}")
+        for i in grouped[key]:
+            badge = ""
+            if len(profile.attribute_fields) >= 2:
+                sub = i.attributes.get(profile.attribute_fields[1][0])
+                if sub:
+                    badge = f" ({sub})"
             lines.append(f"- [[{i.shortcode}]] — {i.title}{badge}")
         lines.append("")
-    if tips:
-        lines.append("## Tips")
-        for i in tips:
+    if autres:
+        lines.append("## Sans rattachement")
+        for i in autres:
             lines.append(f"- [[{i.shortcode}]] — {i.title}")
         lines.append("")
     index = out_dir / f"{collection_slug}.md"

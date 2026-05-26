@@ -64,30 +64,39 @@ def scrape(
 
 @app.command()
 def interpret(
-    trip_context: str = typer.Option("", help="Contexte du voyage (ex: 'Voyage Japon 2026')"),
+    trip_context: str = typer.Option("", help="Contexte (ex: 'Voyage Japon 2026', 'Recettes asiatiques')"),
     workers: int = typer.Option(1, help="Nombre de claude -p en parallèle (1 = séquentiel)"),
+    profile: str = typer.Option(None, help="Profil d'analyse (override env COLLECTION_PROFILE)"),
 ):
     """Phase 2 (V0) : spawn Claude Code headless avec le skill instatrip-analyze."""
     s = Settings.load()
-    run_analysis(project_root=s.project_root, trip_context=trip_context, n_workers=workers)
+    profile_name = profile or s.collection_profile
+    run_analysis(
+        project_root=s.project_root,
+        trip_context=trip_context,
+        n_workers=workers,
+        profile_name=profile_name,
+    )
 
 
 @app.command()
 def export(
     excel: bool = typer.Option(True),
     obsidian: bool = typer.Option(True),
+    profile: str = typer.Option(None, help="Profil d'export (override env COLLECTION_PROFILE)"),
 ):
     """Exporte les insights enrichis vers Excel et/ou Obsidian."""
     s = Settings.load()
+    profile_name = profile or s.collection_profile
     insights: list[PostInsight] = []
     for p in sorted(s.enriched_dir.glob("*.json")):
         insights.append(PostInsight.model_validate_json(p.read_text(encoding="utf-8")))
     if excel:
         out = s.output_dir / f"{s.collection_slug}.xlsx"
-        export_excel(insights, out)
+        export_excel(insights, out, profile_name=profile_name)
         console.print(f"[green]✓ Excel: {out}")
     if obsidian:
-        out = export_obsidian(insights, s.obsidian_dir, s.collection_slug)
+        out = export_obsidian(insights, s.obsidian_dir, s.collection_slug, profile_name=profile_name)
         console.print(f"[green]✓ Obsidian index: {out}")
 
 
@@ -98,12 +107,25 @@ def run(
     workers: int = typer.Option(1, help="Workers parallèles pour l'étape interpret"),
     frame_interval: float = typer.Option(2.0, help="Intervalle (s) entre frames OCR"),
     ocr_confidence: float = typer.Option(0.4, help="Seuil de confiance EasyOCR"),
+    profile: str = typer.Option(None, help="Profil d'analyse (override env COLLECTION_PROFILE)"),
 ):
     """Pipeline complet : collect → scrape → interpret → export."""
     collect(url=url)
     scrape(force=False, frame_interval=frame_interval, ocr_confidence=ocr_confidence, frame_dedup=True, dedup_threshold=6)
-    interpret(trip_context=trip_context, workers=workers)
-    export(excel=True, obsidian=True)
+    interpret(trip_context=trip_context, workers=workers, profile=profile)
+    export(excel=True, obsidian=True, profile=profile)
+
+
+@app.command()
+def profiles():
+    """Liste les profils d'analyse disponibles."""
+    from .profiles import PROFILES
+    for name in sorted(PROFILES):
+        p = PROFILES[name]
+        console.print(f"[cyan]{p.name}[/cyan]  — {p.description}")
+        console.print(f"  catégories : {', '.join(p.categories)}")
+        console.print(f"  attributs  : {', '.join(k for k, _ in p.attribute_fields)}")
+        console.print("")
 
 
 if __name__ == "__main__":
