@@ -94,13 +94,8 @@ def sample_frames(video_path: Path, out_dir: Path, every_seconds: float = 2.0) -
     return sorted(out_dir.glob("frame_*.jpg"))
 
 
-def _dhash(image_path: Path) -> int:
-    """Perceptual hash 8×8 sensible aux changements de layout, insensible
-    aux variations brightness/contrast."""
-    from PIL import Image
-
-    img = Image.open(image_path).convert("L").resize((9, 8), Image.LANCZOS)
-    pixels = list(img.getdata())
+def _dhash_grid(pixels: list[int]) -> int:
+    """Convertit 9×8 pixels (grayscale) en hash dHash 64 bits."""
     bits = 0
     for row in range(8):
         for col in range(8):
@@ -111,16 +106,61 @@ def _dhash(image_path: Path) -> int:
     return bits
 
 
-def dedup_frames(paths: list[Path], threshold: int = 6) -> list[Path]:
-    """Garde une frame par 'plan' visuel. Si une frame est trop similaire
-    (Hamming distance ≤ threshold) à la dernière retenue, on la skip.
-    threshold=6 = bon compromis : capte les overlays de texte courts,
-    skip les frames quasi-identiques d'un plan fixe."""
+def _dhash(image_path: Path) -> int:
+    """Perceptual hash 8×8 sur l'image entière (mode 'full')."""
+    from PIL import Image
+
+    img = Image.open(image_path).convert("L").resize((9, 8), Image.LANCZOS)
+    return _dhash_grid(list(img.getdata()))
+
+
+def _dhash_bands(image_path: Path, band_ratio: float = 0.3) -> tuple[int, int]:
+    """Deux hashes : bande haute (top band_ratio) + bande basse (bottom
+    band_ratio). Cible les zones d'overlays texte sur les reels IG."""
+    from PIL import Image
+
+    img = Image.open(image_path).convert("L")
+    w, h = img.size
+    band_h = max(1, int(h * band_ratio))
+    top_img = img.crop((0, 0, w, band_h)).resize((9, 8), Image.LANCZOS)
+    bot_img = img.crop((0, h - band_h, w, h)).resize((9, 8), Image.LANCZOS)
+    return _dhash_grid(list(top_img.getdata())), _dhash_grid(list(bot_img.getdata()))
+
+
+def dedup_frames(
+    paths: list[Path],
+    threshold: int = 6,
+    mode: str = "bands",
+) -> list[Path]:
+    """Garde une frame par 'plan' visuel.
+
+    - mode='full' : un hash 64-bit sur toute l'image. Skip si Hamming ≤ threshold.
+    - mode='bands' (défaut) : hash séparé sur bande haute (30%) + bande basse
+      (30%) — cible les overlays texte des reels. La frame est gardée si
+      l'une OU l'autre bande dépasse le seuil.
+
+    threshold=6 = bon compromis : capte les overlays texte qui changent,
+    skip les frames quasi-identiques d'un plan fixe sans texte."""
+    if mode not in {"full", "bands"}:
+        raise ValueError(f"mode must be 'full' or 'bands', got {mode!r}")
+
     kept: list[Path] = []
-    last_hash: int | None = None
+    last_hash: int | tuple[int, int] | None = None
     for p in paths:
-        h = _dhash(p)
-        if last_hash is None or bin(h ^ last_hash).count("1") > threshold:
-            kept.append(p)
-            last_hash = h
+        if mode == "full":
+            h = _dhash(p)
+            if last_hash is None or bin(h ^ last_hash).count("1") > threshold:
+                kept.append(p)
+                last_hash = h
+        else:
+            h_top, h_bot = _dhash_bands(p)
+            if last_hash is None:
+                kept.append(p)
+                last_hash = (h_top, h_bot)
+                continue
+            top_dist = bin(h_top ^ last_hash[0]).count("1")
+            bot_dist = bin(h_bot ^ last_hash[1]).count("1")
+            if top_dist > threshold or bot_dist > threshold:
+                kept.append(p)
+                last_hash = (h_top, h_bot)
     return kept

@@ -46,6 +46,7 @@ def scrape(
     ocr_confidence: float = typer.Option(0.4, help="Seuil de confiance EasyOCR (0-1). Plus haut = moins de bruit."),
     frame_dedup: bool = typer.Option(True, help="Dédup les frames quasi-identiques (dHash) avant OCR."),
     dedup_threshold: int = typer.Option(6, help="Distance Hamming max pour dédup (0-64). Plus bas = plus strict."),
+    dedup_mode: str = typer.Option("bands", help="'bands' (top+bottom 30%, cible overlays texte IG) ou 'full' (image entière)."),
 ):
     """Phase 1 : extraction brute pour chaque shortcode."""
     s = Settings.load()
@@ -57,6 +58,7 @@ def scrape(
         ocr_min_confidence=ocr_confidence,
         frame_dedup=frame_dedup,
         dedup_threshold=dedup_threshold,
+        dedup_mode=dedup_mode,
     )
 
 

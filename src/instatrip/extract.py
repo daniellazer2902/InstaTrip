@@ -28,6 +28,7 @@ def extract_one(
     ocr_min_confidence: float = 0.4,
     frame_dedup: bool = True,
     dedup_threshold: int = 6,
+    dedup_mode: str = "bands",
 ) -> RawPost:
     """Pipeline phase 1 pour un post. Idempotent : si le JSON existe
     déjà, on le relit (sauf si force=True).
@@ -37,7 +38,8 @@ def extract_one(
     - ocr_min_confidence : seuil de confiance EasyOCR (défaut 0.4).
     - frame_dedup : si True, skip les frames quasi-identiques via dHash.
     - dedup_threshold : Hamming distance maximale pour considérer une frame
-      comme doublon (défaut 6, plus bas = plus strict)."""
+      comme doublon (défaut 6, plus bas = plus strict).
+    - dedup_mode : 'bands' (défaut, top+bottom 30%) ou 'full' (image entière)."""
     out = _raw_path(settings, shortcode)
     if out.exists() and not force:
         console.print(f"[dim]cache hit: {shortcode}")
@@ -61,8 +63,8 @@ def extract_one(
         frames = sample_frames(media["video_path"], frames_dir, every_seconds=frame_interval)
         if frame_dedup and frames:
             before = len(frames)
-            frames = dedup_frames(frames, threshold=dedup_threshold)
-            console.print(f"[dim]→ {shortcode}: dedup frames {before} → {len(frames)}")
+            frames = dedup_frames(frames, threshold=dedup_threshold, mode=dedup_mode)
+            console.print(f"[dim]→ {shortcode}: dedup ({dedup_mode}) frames {before} → {len(frames)}")
         if frames:
             console.print(f"[cyan]→ {shortcode}: OCR {len(frames)} frames")
             ocr_text = ocr_images(frames, min_confidence=ocr_min_confidence)
@@ -111,6 +113,7 @@ def extract_all(
     ocr_min_confidence: float = 0.4,
     frame_dedup: bool = True,
     dedup_threshold: int = 6,
+    dedup_mode: str = "bands",
 ) -> list[RawPost]:
     results: list[RawPost] = []
     for sc in shortcodes:
@@ -121,6 +124,7 @@ def extract_all(
                 ocr_min_confidence=ocr_min_confidence,
                 frame_dedup=frame_dedup,
                 dedup_threshold=dedup_threshold,
+                dedup_mode=dedup_mode,
             ))
         except Exception as e:
             console.print(f"[red]✗ {sc}: {e}")
