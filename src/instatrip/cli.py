@@ -10,6 +10,7 @@ from rich.console import Console
 from .auth import login_and_save_state
 from .collection import collect_shortcodes
 from .config import Settings
+from .doctor import build_report, has_blocking_failure
 from .exporters.excel import export_excel
 from .exporters.obsidian import export_obsidian
 from .extract import extract_all
@@ -168,6 +169,28 @@ def new(
         raise typer.BadParameter(str(e))
     console.print(f"[green]✓ Collection créée : {env}")
     console.print(f"[dim]Lance : uv run instatrip run --collection {slug}")
+
+
+@app.command()
+def doctor():
+    """Vérifie l'environnement (ffmpeg, claude, chromium, torch, session IG)."""
+    from rich.table import Table
+
+    s = Settings.load()
+    report = build_report(s.state_path)
+    table = Table(title="InstaTrip — doctor")
+    table.add_column("Check")
+    table.add_column("Statut")
+    table.add_column("Détail / Réparation")
+    icon = {"ok": "[green]OK", "warn": "[yellow]⚠", "ko": "[red]KO"}
+    for c in report:
+        fix = c.detail if c.status == "ok" else (c.detail + " — " + c.hint if c.detail else c.hint)
+        table.add_row(c.name, icon[c.status], fix)
+    console.print(table)
+    if has_blocking_failure(report):
+        console.print("[red]✗ Au moins un prérequis bloquant manque.")
+        raise typer.Exit(1)
+    console.print("[green]✓ Environnement OK.")
 
 
 @app.command()
