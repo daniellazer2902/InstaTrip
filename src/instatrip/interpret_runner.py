@@ -97,7 +97,7 @@ def _run_single(collection_root: Path, trip_context: str, timeout_seconds: int, 
             f"Sentinelle absente après exécution : {sentinel}. "
             "Le skill n'a pas fini correctement."
         )
-    payload = json.loads(sentinel.read_text(encoding="utf-8"))
+    payload = json.loads(sentinel.read_text(encoding="utf-8-sig"))
     sentinel.unlink()
     if payload.get("status") != "ok":
         raise SentinelError(payload.get("error", "status non-ok"))
@@ -157,20 +157,35 @@ def _run_parallel(
         "failed": 0,
         "failures": [],
     }
+    ok_workers = 0
     for wid in range(len(buckets)):
         s = collection_root / "data" / f"{SENTINEL_NAME}.{wid}"
         if not s.exists():
-            raise SentinelError(f"Sentinelle worker {wid} absente : {s}")
-        payload = json.loads(s.read_text(encoding="utf-8"))
+            aggregated["failures"].append({"worker": wid, "error": "sentinelle absente"})
+            aggregated["failed"] += 1
+            continue
+        try:
+            payload = json.loads(s.read_text(encoding="utf-8-sig"))
+        except json.JSONDecodeError as e:
+            aggregated["failures"].append({"worker": wid, "error": f"sentinelle illisible: {e}"})
+            aggregated["failed"] += 1
+            s.unlink()
+            continue
         s.unlink()
         if payload.get("status") != "ok":
-            raise SentinelError(
-                f"Worker {wid} : {payload.get('error', 'status non-ok')}"
-            )
+            aggregated["failures"].append({"worker": wid, "error": payload.get("error", "status non-ok")})
+            aggregated["failed"] += 1
+            continue
+        ok_workers += 1
         aggregated["processed"] += payload.get("processed", 0)
         aggregated["skipped"] += payload.get("skipped", 0)
         aggregated["failed"] += payload.get("failed", 0)
         aggregated["failures"].extend(payload.get("failures", []))
+
+    if ok_workers == 0:
+        raise SentinelError(
+            f"Tous les workers ont échoué : {aggregated['failures']}"
+        )
 
     console.print(
         f"[green]✓ analyse parallèle OK — processed={aggregated['processed']} "
