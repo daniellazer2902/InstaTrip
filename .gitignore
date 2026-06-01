@@ -11,3 +11,5 @@ collections/*/output/
 *.egg-info/
 dist/
 build/
+.python-version
+docs/superpowers/
