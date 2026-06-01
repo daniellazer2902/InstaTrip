@@ -49,7 +49,13 @@ def extract_one(
     page = fetch_post(shortcode, settings.state_path)
 
     console.print(f"[cyan]→ {shortcode}: download media")
-    media = download_media(shortcode, settings.state_path, settings.media_dir)
+    media = download_media(
+        shortcode,
+        settings.state_path,
+        settings.media_dir,
+        is_video=page.get("is_video", False),
+        image_urls=page.get("image_urls", []),
+    )
 
     transcript: str | None = None
     ocr_text: list[str] = []
@@ -72,9 +78,12 @@ def extract_one(
         console.print(f"[cyan]→ {shortcode}: OCR image(s)")
         ocr_text = ocr_images(media["image_paths"], min_confidence=ocr_min_confidence)
 
-    media_type = MediaType.REEL if media["video_path"] else MediaType.IMAGE
-    if len(media["image_paths"]) > 1 and not media["video_path"]:
+    if media["video_path"]:
+        media_type = MediaType.REEL
+    elif len(media["image_paths"]) > 1:
         media_type = MediaType.CAROUSEL
+    else:
+        media_type = MediaType.IMAGE
 
     post = RawPost(
         shortcode=shortcode,
