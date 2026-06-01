@@ -15,6 +15,7 @@ from .exporters.obsidian import export_obsidian
 from .extract import extract_all
 from .interpret_runner import run_analysis
 from .models import PostInsight
+from .scaffold import scaffold_collection
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
@@ -152,6 +153,21 @@ def collections():
         raw_count = len(list((sub / "data" / "raw").glob("*.json"))) if (sub / "data" / "raw").exists() else 0
         enr_count = len(list((sub / "data" / "enriched").glob("*.json"))) if (sub / "data" / "enriched").exists() else 0
         console.print(f"[cyan]{sub.name}[/cyan]  raw={raw_count}  enriched={enr_count}")
+
+
+@app.command()
+def new(
+    slug: str = typer.Argument(..., help="Slug de la nouvelle collection (ex: tokyo-2027)"),
+    url: str = typer.Option(..., help="URL de la collection Instagram (dossier Enregistrements)"),
+    profile: str = typer.Option("voyage", help="Profil d'analyse (voyage / recettes / sport)"),
+):
+    """Crée une nouvelle collection (collections/<slug>/.env)."""
+    try:
+        env = scaffold_collection(Path.cwd(), slug, url, profile)
+    except FileExistsError as e:
+        raise typer.BadParameter(str(e))
+    console.print(f"[green]✓ Collection créée : {env}")
+    console.print(f"[dim]Lance : uv run instatrip run --collection {slug}")
 
 
 @app.command()
