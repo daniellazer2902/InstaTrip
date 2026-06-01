@@ -76,13 +76,20 @@ def fetch_post(shortcode: str, state_path: Path) -> dict:
         media = parse_post_media(html)
         image_urls = list(media["image_urls"])
         if not media["is_video"]:
-            # Carrousel : cliquer "Suivant" pour forcer le lazy-load de chaque slide
+            # Carrousel : cliquer "Suivant" pour charger chaque slide. On ne
+            # collecte que les images DANS le conteneur carrousel pour éviter
+            # les avatars, vignettes de posts suggérés et avatars de commentaires.
+            # Les posts mono-image n'ont pas de conteneur carrousel : og:image
+            # (déjà dans image_urls) sert de socle.
             for _ in range(20):  # garde-fou anti-boucle
-                for img in page.query_selector_all("article img"):
+                for img in page.query_selector_all("[aria-roledescription='carousel'] img"):
                     src = img.get_attribute("src")
                     if src and src.startswith("http") and src not in image_urls:
                         image_urls.append(src)
-                nxt = page.query_selector("button[aria-label='Next'], button[aria-label='Suivant']")
+                nxt = page.query_selector(
+                    "[aria-roledescription='carousel'] button[aria-label='Next'], "
+                    "[aria-roledescription='carousel'] button[aria-label='Suivant']"
+                )
                 if not nxt:
                     break
                 try:
