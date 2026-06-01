@@ -38,6 +38,25 @@ def parse_post_html(html: str) -> dict:
     return {"author": author, "caption": caption, "pinned_comment": pinned}
 
 
+def parse_post_media(html: str) -> dict:
+    """Détecte le type média d'une page de post Instagram.
+
+    Renvoie {is_video: bool, image_urls: list[str]}. Pour un carrousel,
+    le HTML statique n'expose souvent que la 1re image (og:image) ; les
+    slides suivantes sont collectées par fetch_post via Playwright."""
+    soup = BeautifulSoup(html, "html.parser")
+    og_type = soup.find("meta", attrs={"property": "og:type"})
+    og_video = soup.find("meta", attrs={"property": "og:video"})
+    type_val = (og_type["content"] if og_type and og_type.get("content") else "").lower()
+    is_video = bool(og_video) or "video" in type_val
+
+    image_urls: list[str] = []
+    og_image = soup.find("meta", attrs={"property": "og:image"})
+    if og_image and og_image.get("content"):
+        image_urls.append(og_image["content"])
+    return {"is_video": is_video, "image_urls": image_urls}
+
+
 def fetch_post(shortcode: str, state_path: Path) -> dict:
     """Charge la page d'un post avec session authentifiée puis renvoie
     le dict {author, caption, pinned_comment, url}."""
@@ -54,7 +73,26 @@ def fetch_post(shortcode: str, state_path: Path) -> dict:
         except Exception:
             pass
         html = page.content()
+        media = parse_post_media(html)
+        image_urls = list(media["image_urls"])
+        if not media["is_video"]:
+            # Carrousel : cliquer "Suivant" pour forcer le lazy-load de chaque slide
+            for _ in range(20):  # garde-fou anti-boucle
+                for img in page.query_selector_all("article img"):
+                    src = img.get_attribute("src")
+                    if src and src.startswith("http") and src not in image_urls:
+                        image_urls.append(src)
+                nxt = page.query_selector("button[aria-label='Next'], button[aria-label='Suivant']")
+                if not nxt:
+                    break
+                try:
+                    nxt.click(timeout=1000)
+                    page.wait_for_timeout(600)
+                except Exception:
+                    break
         browser.close()
     data = parse_post_html(html)
     data["url"] = url
+    data["is_video"] = media["is_video"]
+    data["image_urls"] = image_urls
     return data
