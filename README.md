@@ -2,6 +2,23 @@
 
 Pipeline Instagram saved → Excel + Obsidian pour analyser **n'importe quelle collection thématique** (voyage, recettes, sport…) à partir d'un dossier IG "Enregistrements".
 
+## Démarrage rapide
+
+**Le plus simple (Windows)** : double-clique `run.bat`. Il installe tout et lance un assistant Claude qui te guide (cf. `SETUP.md`).
+
+**Manuellement** :
+```
+uv sync
+uv run playwright install chromium
+uv run instatrip doctor          # vérifie ffmpeg, claude, chromium, GPU, session IG
+uv run instatrip auth            # 1× : login Instagram
+```
+Puis, dans Claude Code, invoque **`/instatrip-collection`** : il crée une nouvelle collection (en demandant le lien Instagram) ou reprend une collection existante pour récupérer les nouveaux posts. Détails d'installation et gestion du cookie : voir **`SETUP.md`**.
+
+## Confidentialité
+
+La session Instagram (`.secrets/ig_state.json`), le fichier `.env` et les données de collection (`collections/*/data`, `collections/*/output`) sont **ignorés par Git** et ne doivent jamais être publiés. Copie `.env.example` vers `.env` pour ta config locale.
+
 ## Organisation multi-collections
 
 Chaque collection vit dans son propre sous-dossier :
@@ -33,7 +50,11 @@ Sélection de la collection active :
 - via env : `COLLECTION_SLUG=japon-2026` dans `.env`
 - via CLI : `--collection japon-2026` sur n'importe quelle commande (override)
 
+Créer une nouvelle collection : `uv run instatrip new <slug> --url "<lien IG>" --profile voyage`.
+
 Lister les collections existantes : `uv run instatrip collections`.
+
+Diagnostiquer l'environnement (ffmpeg, claude, chromium, GPU, session IG) : `uv run instatrip doctor`.
 
 Migration one-shot depuis l'ancienne structure (flat `data/` + `output/` au root) : `uv run instatrip migrate <slug>`.
 
@@ -188,5 +209,6 @@ Le runner Python lit, consomme (`unlink`), et agrège les stats. Permet aussi le
 ## Outputs
 
 - `output/<slug>.xlsx` : 1 ligne par post (Shortcode, URL, Catégorie, Titre, Ville, Quartier, Description, Activité, Tags)
-- `output/obsidian/<shortcode>.md` : 1 note avec frontmatter YAML + wikilink `[[Ville]]`
-- `output/obsidian/<slug>.md` : index groupé par ville + section Tips
+- `output/obsidian/<slug>.md` : index (à la racine) groupé par ville + section Tips
+- `output/obsidian/<slug>.base` : base Obsidian interactive (à la racine)
+- `output/obsidian/posts/<shortcode>.md` : 1 note par post (frontmatter YAML + wikilink `[[Ville]]`), regroupées dans le sous-dossier `posts/`
