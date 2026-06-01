@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
+import httpx
 import yt_dlp
 
 
@@ -27,9 +28,8 @@ def export_cookies_netscape(state_path: Path, out_path: Path) -> None:
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def download_media(shortcode: str, state_path: Path, media_dir: Path) -> dict:
-    """Télécharge le média du post (vidéo ou image) + métadonnées.
-    Retourne {video_path, image_paths, media_type, info_dict}."""
+def download_video(shortcode: str, state_path: Path, media_dir: Path) -> Optional[Path]:
+    """Télécharge la vidéo d'un reel via yt-dlp (format vidéo uniquement)."""
     media_dir.mkdir(parents=True, exist_ok=True)
     cookies = media_dir.parent / ".cookies.txt"
     export_cookies_netscape(state_path, cookies)
@@ -44,20 +44,46 @@ def download_media(shortcode: str, state_path: Path, media_dir: Path) -> dict:
         "writeinfojson": False,
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
+        ydl.extract_info(url, download=True)
 
-    video_path: Optional[Path] = None
-    images: list[Path] = []
     for f in media_dir.glob(f"{shortcode}.*"):
         if f.suffix.lower() in {".mp4", ".mov", ".webm"}:
-            video_path = f
-        elif f.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}:
-            images.append(f)
+            return f
+    return None
+
+
+def download_images(image_urls: list[str], media_dir: Path, shortcode: str) -> list[Path]:
+    """Télécharge les bytes des images d'un post photo/carrousel via HTTP."""
+    media_dir.mkdir(parents=True, exist_ok=True)
+    paths: list[Path] = []
+    with httpx.Client(timeout=30, follow_redirects=True) as client:
+        for i, url in enumerate(image_urls):
+            r = client.get(url)
+            r.raise_for_status()
+            p = media_dir / f"{shortcode}_{i}.jpg"
+            p.write_bytes(r.content)
+            paths.append(p)
+    return paths
+
+
+def download_media(
+    shortcode: str,
+    state_path: Path,
+    media_dir: Path,
+    is_video: bool,
+    image_urls: Optional[list[str]] = None,
+) -> dict:
+    """Orchestrateur : vidéo → yt-dlp, sinon téléchargement HTTP des images.
+    Plus aucun appel yt-dlp pour les posts photo (fini le crash
+    'No video formats found')."""
+    if is_video:
+        video_path = download_video(shortcode, state_path, media_dir)
+        return {"video_path": video_path, "image_paths": [], "media_type": "reel"}
+    paths = download_images(image_urls or [], media_dir, shortcode)
     return {
-        "video_path": video_path,
-        "image_paths": images,
-        "media_type": "reel" if video_path else "image",
-        "info": {"title": info.get("title"), "description": info.get("description")},
+        "video_path": None,
+        "image_paths": paths,
+        "media_type": "carousel" if len(paths) > 1 else "image",
     }
 
 

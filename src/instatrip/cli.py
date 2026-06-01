@@ -10,11 +10,14 @@ from rich.console import Console
 from .auth import login_and_save_state
 from .collection import collect_shortcodes
 from .config import Settings
+from .doctor import build_report, has_blocking_failure
 from .exporters.excel import export_excel
 from .exporters.obsidian import export_obsidian
 from .extract import extract_all
 from .interpret_runner import run_analysis
 from .models import PostInsight
+from .scaffold import scaffold_collection
+from .session import session_warning
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
@@ -38,6 +41,9 @@ def collect(
 ):
     """Scrolle la collection et écrit la liste des shortcodes."""
     s = Settings.load(collection=collection)
+    warn = session_warning(s.state_path)
+    if warn:
+        console.print(f"[yellow]{warn}")
     target = url or s.collection_url
     if not target:
         raise typer.BadParameter("Fournir --url ou définir COLLECTION_URL dans .env")
@@ -58,6 +64,9 @@ def scrape(
 ):
     """Phase 1 : extraction brute pour chaque shortcode."""
     s = Settings.load(collection=collection)
+    warn = session_warning(s.state_path)
+    if warn:
+        console.print(f"[yellow]{warn}")
     codes = json.loads(s.shortcodes_file.read_text(encoding="utf-8"))
     extract_all(
         codes, s, force=force,
@@ -152,6 +161,43 @@ def collections():
         raw_count = len(list((sub / "data" / "raw").glob("*.json"))) if (sub / "data" / "raw").exists() else 0
         enr_count = len(list((sub / "data" / "enriched").glob("*.json"))) if (sub / "data" / "enriched").exists() else 0
         console.print(f"[cyan]{sub.name}[/cyan]  raw={raw_count}  enriched={enr_count}")
+
+
+@app.command()
+def new(
+    slug: str = typer.Argument(..., help="Slug de la nouvelle collection (ex: tokyo-2027)"),
+    url: str = typer.Option(..., help="URL de la collection Instagram (dossier Enregistrements)"),
+    profile: str = typer.Option("voyage", help="Profil d'analyse (voyage / recettes / sport)"),
+):
+    """Crée une nouvelle collection (collections/<slug>/.env)."""
+    try:
+        env = scaffold_collection(Path.cwd(), slug, url, profile)
+    except FileExistsError as e:
+        raise typer.BadParameter(str(e))
+    console.print(f"[green]✓ Collection créée : {env}")
+    console.print(f"[dim]Lance : uv run instatrip run --collection {slug}")
+
+
+@app.command()
+def doctor():
+    """Vérifie l'environnement (ffmpeg, claude, chromium, torch, session IG)."""
+    from rich.table import Table
+
+    s = Settings.load()
+    report = build_report(s.state_path)
+    table = Table(title="InstaTrip — doctor")
+    table.add_column("Check")
+    table.add_column("Statut")
+    table.add_column("Détail / Réparation")
+    icon = {"ok": "[green]OK", "warn": "[yellow]⚠", "ko": "[red]KO"}
+    for c in report:
+        fix = c.detail if c.status == "ok" else (c.detail + " — " + c.hint if c.detail else c.hint)
+        table.add_row(c.name, icon[c.status], fix)
+    console.print(table)
+    if has_blocking_failure(report):
+        console.print("[red]✗ Au moins un prérequis bloquant manque.")
+        raise typer.Exit(1)
+    console.print("[green]✓ Environnement OK.")
 
 
 @app.command()

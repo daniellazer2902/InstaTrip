@@ -62,8 +62,10 @@ def export_obsidian(
     profile = get_profile(profile_name)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    posts_dir = out_dir / "posts"
+    posts_dir.mkdir(parents=True, exist_ok=True)
     for i in insights:
-        (out_dir / f"{i.shortcode}.md").write_text(
+        (posts_dir / f"{i.shortcode}.md").write_text(
             _note(i, profile.attribute_fields), encoding="utf-8"
         )
 

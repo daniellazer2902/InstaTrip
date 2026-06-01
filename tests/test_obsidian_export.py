@@ -24,7 +24,7 @@ def test_export_obsidian_voyage(tmp_path):
     ]
     export_obsidian(insights, tmp_path, collection_slug="japon-2026", profile_name="voyage")
 
-    note_a = (tmp_path / "A.md").read_text(encoding="utf-8")
+    note_a = (tmp_path / "posts" / "A.md").read_text(encoding="utf-8")
     assert "category: lieu" in note_a
     assert 'title: "Sushi Dai"' in note_a
     assert "city: Tokyo" in note_a
@@ -37,6 +37,12 @@ def test_export_obsidian_voyage(tmp_path):
     index = (tmp_path / "japon-2026.md").read_text(encoding="utf-8")
     assert "Profil : **voyage**" in index
     assert "[[A]]" in index and "[[B]]" in index
+
+    # structure : notes dans posts/, index + base à la racine
+    assert (tmp_path / "posts" / "B.md").exists()
+    assert (tmp_path / "japon-2026.base").exists()
+    assert (tmp_path / "japon-2026.md").exists()
+    assert not (tmp_path / "A.md").exists()
 
 
 def test_export_obsidian_recettes(tmp_path):
@@ -51,7 +57,7 @@ def test_export_obsidian_recettes(tmp_path):
     ]
     export_obsidian(insights, tmp_path, collection_slug="recettes", profile_name="recettes")
 
-    note = (tmp_path / "R1.md").read_text(encoding="utf-8")
+    note = (tmp_path / "posts" / "R1.md").read_text(encoding="utf-8")
     assert "category: plat" in note
     assert "cuisine: japonaise" in note
     assert "difficulte: moyen" in note
