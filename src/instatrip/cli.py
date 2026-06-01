@@ -17,6 +17,7 @@ from .extract import extract_all
 from .interpret_runner import run_analysis
 from .models import PostInsight
 from .scaffold import scaffold_collection
+from .session import session_warning
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
@@ -40,6 +41,9 @@ def collect(
 ):
     """Scrolle la collection et écrit la liste des shortcodes."""
     s = Settings.load(collection=collection)
+    warn = session_warning(s.state_path)
+    if warn:
+        console.print(f"[yellow]{warn}")
     target = url or s.collection_url
     if not target:
         raise typer.BadParameter("Fournir --url ou définir COLLECTION_URL dans .env")
@@ -60,6 +64,9 @@ def scrape(
 ):
     """Phase 1 : extraction brute pour chaque shortcode."""
     s = Settings.load(collection=collection)
+    warn = session_warning(s.state_path)
+    if warn:
+        console.print(f"[yellow]{warn}")
     codes = json.loads(s.shortcodes_file.read_text(encoding="utf-8"))
     extract_all(
         codes, s, force=force,
