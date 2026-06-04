@@ -117,7 +117,7 @@ def sample_frames(video_path: Path, out_dir: Path, every_seconds: float = 2.0) -
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    return sorted(out_dir.glob("frame_*.jpg"))
+    return sorted(out_dir.glob("frame_*.jpg"), key=lambda p: int(p.stem.split("_")[-1]))
 
 
 def _dhash_grid(pixels: list[int]) -> int:

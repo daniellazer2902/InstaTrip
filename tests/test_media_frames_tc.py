@@ -1,6 +1,31 @@
 from pathlib import Path
 
+import pytest
+
 from instatrip import media
+
+
+def test_sample_frames_chronological_order_past_999(tmp_path, monkeypatch):
+    """sample_frames() doit trier par index numérique, pas lexicographique.
+    Lexicographique : frame_1000 < frame_999 (bug). Numérique : frame_999 < frame_1000.
+    """
+    # Crée des faux fichiers frame dans tmp_path
+    stems = [
+        "frame_009", "frame_010", "frame_099", "frame_100",
+        "frame_999", "frame_1000", "frame_1001",
+    ]
+    for stem in stems:
+        (tmp_path / f"{stem}.jpg").write_bytes(b"\xff")
+
+    # Neutralise l'appel ffmpeg
+    monkeypatch.setattr(media.subprocess, "run", lambda *a, **k: None)
+
+    result = media.sample_frames(Path("dummy.mp4"), tmp_path, every_seconds=2.0)
+
+    assert [p.stem for p in result] == [
+        "frame_009", "frame_010", "frame_099", "frame_100",
+        "frame_999", "frame_1000", "frame_1001",
+    ]
 
 
 def test_timecode_for_frame():
