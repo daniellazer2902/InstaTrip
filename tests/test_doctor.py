@@ -1,4 +1,4 @@
-from instatrip.doctor import Check, has_blocking_failure, check_ig_session
+from instatrip.doctor import Check, has_blocking_failure, check_ig_session, check_teams_videos
 
 
 def test_has_blocking_failure_true_when_blocking_ko():
@@ -26,3 +26,34 @@ def test_check_ig_session_expired_is_blocking_ko(tmp_path):
     c = check_ig_session(p)
     assert c.blocking is True
     assert c.status == "ko"
+
+
+def test_teams_videos_no_collections_is_nonblocking(tmp_path):
+    """With no collections/ dir, teams check is present and non-blocking."""
+    c = check_teams_videos(tmp_path)
+    assert c.name == "Teams videos"
+    assert c.blocking is False
+    # Must not trigger has_blocking_failure
+    report = [c]
+    assert has_blocking_failure(report) is False
+
+
+def test_teams_videos_no_videos_is_warn_nonblocking(tmp_path):
+    """collections/ exists but no videos → warn, non-blocking."""
+    (tmp_path / "collections" / "demo" / "input").mkdir(parents=True)
+    c = check_teams_videos(tmp_path)
+    assert c.blocking is False
+    assert c.status == "warn"
+    assert has_blocking_failure([c]) is False
+
+
+def test_teams_videos_found_is_ok_nonblocking(tmp_path):
+    """A .mp4 in collections/demo/input/ → status ok, non-blocking."""
+    input_dir = tmp_path / "collections" / "demo" / "input"
+    input_dir.mkdir(parents=True)
+    (input_dir / "recording.mp4").write_bytes(b"")
+    c = check_teams_videos(tmp_path)
+    assert c.blocking is False
+    assert c.status == "ok"
+    assert "demo" in c.detail
+    assert has_blocking_failure([c]) is False
