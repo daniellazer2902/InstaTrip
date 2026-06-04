@@ -259,7 +259,7 @@ def teams_ingest(
     ocr_confidence: float = typer.Option(0.4, help="Seuil de confiance OCR."),
     collection: str = _collection_opt(),
 ):
-    """Extraction : audio → transcription → frames → OCR → data/bundle.json."""
+    """Extraction : audio -> transcription -> frames -> OCR -> data/bundle.json."""
     from .teams import ingest
     s = Settings.load(collection=collection)
     bundle = ingest(
