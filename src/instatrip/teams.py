@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .teams_models import BundleWindow, FrameInfo, TranscriptSegment
+import json
+
+from .media import extract_audio, sample_frames_with_timecodes, dedup_frames_tc
+from .ocr import ocr_images
+from .transcribe import transcribe_segments
+from .teams_models import Bundle, BundleWindow, FrameInfo, TranscriptSegment
 
 VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v"}
 
@@ -55,3 +60,59 @@ def build_windows(
     for new_idx, w in enumerate(windows):
         w.index = new_idx
     return windows
+
+
+def ingest(
+    *,
+    input_dir: Path,
+    data_dir: Path,
+    slug: str,
+    model_size: str = "medium",
+    frame_interval: float = 2.0,
+    window_minutes: float = 15,
+    dedup_threshold: int = 6,
+    dedup_mode: str = "bands",
+    ocr_confidence: float = 0.4,
+) -> Path:
+    """Extraction mécanique d'une vidéo Teams → data/bundle.json.
+    Écrit aussi data/transcript.json. Réutilise media/transcribe/ocr."""
+    data_dir.mkdir(parents=True, exist_ok=True)
+    frames_dir = data_dir / "frames"
+
+    video = find_input_video(input_dir)
+
+    audio = extract_audio(video, data_dir / "audio.wav")
+    segments = transcribe_segments(audio, model_size=model_size, language="fr")
+    (data_dir / "transcript.json").write_text(
+        json.dumps([s.model_dump() for s in segments], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    sampled = sample_frames_with_timecodes(video, frames_dir, frame_interval)
+    kept = dedup_frames_tc(
+        sampled, threshold=dedup_threshold, mode=dedup_mode, delete_dropped=True
+    )
+    frames: list[FrameInfo] = []
+    for path, tc in kept:
+        texts = ocr_images([path], min_confidence=ocr_confidence, languages=("fr", "en"))
+        frames.append(
+            FrameInfo(timecode=tc, path=str(path), ocr=texts[0] if texts else "")
+        )
+
+    duration = 0.0
+    if segments:
+        duration = max(duration, max(s.end for s in segments))
+    if frames:
+        duration = max(duration, max(f.timecode for f in frames))
+
+    windows = build_windows(segments, frames, window_seconds=window_minutes * 60)
+    bundle = Bundle(
+        slug=slug,
+        source_video=str(video),
+        duration_seconds=duration,
+        model=model_size,
+        windows=windows,
+    )
+    bundle_path = data_dir / "bundle.json"
+    bundle_path.write_text(bundle.model_dump_json(indent=2), encoding="utf-8")
+    return bundle_path
