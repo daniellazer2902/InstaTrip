@@ -23,6 +23,7 @@ class Settings:
     obsidian_dir: Path
     state_path: Path
     shortcodes_file: Path
+    input_dir: Path
 
     @classmethod
     def load(cls, collection: str | None = None) -> "Settings":
@@ -50,8 +51,9 @@ class Settings:
         obsidian = output / "obsidian"
         secrets = project_root / ".secrets"
         shortcodes_file = collection_root / "data" / "shortcodes.json"
+        input_dir = collection_root / "input"
 
-        for p in (raw, enriched, media, output, obsidian, secrets):
+        for p in (raw, enriched, media, output, obsidian, secrets, input_dir):
             p.mkdir(parents=True, exist_ok=True)
 
         return cls(
@@ -69,4 +71,5 @@ class Settings:
             obsidian_dir=obsidian,
             state_path=secrets / "ig_state.json",
             shortcodes_file=shortcodes_file,
+            input_dir=input_dir,
         )
