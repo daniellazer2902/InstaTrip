@@ -111,7 +111,7 @@ def build_report(state_path: Path) -> list[Check]:
         check_chromium(),
         check_torch(),
         check_ig_session(state_path),
-        check_teams_videos(state_path.parent),
+        check_teams_videos(state_path.parent.parent),  # state_path = <root>/.secrets/ig_state.json → root = parent.parent
     ]
 
 
