@@ -4,17 +4,21 @@ from functools import lru_cache
 from pathlib import Path
 
 
-@lru_cache(maxsize=1)
-def _reader():
+@lru_cache(maxsize=4)
+def _reader(languages: tuple[str, ...] = ("en", "ja")):
     import easyocr
     import torch
-    return easyocr.Reader(["en", "ja"], gpu=torch.cuda.is_available())
+    return easyocr.Reader(list(languages), gpu=torch.cuda.is_available())
 
 
-def ocr_images(paths: list[Path], min_confidence: float = 0.4) -> list[str]:
+def ocr_images(
+    paths: list[Path],
+    min_confidence: float = 0.4,
+    languages: tuple[str, ...] = ("en", "ja"),
+) -> list[str]:
     """Extrait le texte de chaque image. Retourne une liste de chaînes
     (une par image) dédupliquée, sans entrées vides."""
-    reader = _reader()
+    reader = _reader(tuple(languages))
     out: list[str] = []
     seen: set[str] = set()
     for p in paths:
