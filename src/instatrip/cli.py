@@ -20,6 +20,8 @@ from .scaffold import scaffold_collection
 from .session import session_warning
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
+teams_app = typer.Typer(add_completion=False, no_args_is_help=True)
+app.add_typer(teams_app, name="teams", help="Mode Teams : analyser une vidéo locale.")
 console = Console()
 
 
@@ -233,6 +235,66 @@ def migrate(
         return
     console.print(f"[green]✓ Migration vers collections/{to}/ : {', '.join(moved)}")
     console.print("[dim]N'oublie pas : mets à jour .env avec COLLECTION_SLUG si besoin.")
+
+
+@teams_app.command("new")
+def teams_new(slug: str = typer.Argument(..., help="Slug (ex: demo-projet-x)")):
+    """Crée collections/<slug>/input/ — dépose ta vidéo Teams dedans."""
+    from .scaffold import scaffold_teams
+    try:
+        env = scaffold_teams(Path.cwd(), slug)
+    except FileExistsError as e:
+        raise typer.BadParameter(str(e))
+    console.print(f"[green]✓ Collection Teams créée : {env}")
+    console.print(f"[dim]Dépose la vidéo dans collections/{slug}/input/ puis : uv run instatrip teams ingest --collection {slug}")
+
+
+@teams_app.command("ingest")
+def teams_ingest(
+    model: str = typer.Option("medium", help="Modèle Whisper (tiny/base/small/medium/large-v3)."),
+    frame_interval: float = typer.Option(2.0, help="Intervalle (s) entre frames."),
+    window_minutes: float = typer.Option(15.0, help="Durée d'une fenêtre de chapitrage (min)."),
+    dedup_threshold: int = typer.Option(6, help="Distance Hamming max pour dédup frames."),
+    dedup_mode: str = typer.Option("bands", help="'bands' ou 'full'."),
+    ocr_confidence: float = typer.Option(0.4, help="Seuil de confiance OCR."),
+    collection: str = _collection_opt(),
+):
+    """Extraction : audio -> transcription -> frames -> OCR -> data/bundle.json."""
+    from .teams import ingest
+    s = Settings.load(collection=collection)
+    bundle = ingest(
+        input_dir=s.input_dir,
+        data_dir=s.collection_root / "data",
+        slug=s.collection_slug,
+        model_size=model,
+        frame_interval=frame_interval,
+        window_minutes=window_minutes,
+        dedup_threshold=dedup_threshold,
+        dedup_mode=dedup_mode,
+        ocr_confidence=ocr_confidence,
+    )
+    console.print(f"[green]✓ Bundle écrit : {bundle}")
+    console.print("[dim]Étape suivante : invoque le skill instatrip-teams pour analyser (chapitrage + synthèse).")
+
+
+@teams_app.command("export")
+def teams_export(collection: str = _collection_opt()):
+    """Génère le dossier Obsidian depuis data/analysis/ (synthesis + chapitres)."""
+    from .exporters.obsidian_teams import export_teams_obsidian
+    from .teams_models import ChapterAnalysis, Synthesis
+    s = Settings.load(collection=collection)
+    analysis = s.collection_root / "data" / "analysis"
+    syn_path = analysis / "synthesis.json"
+    if not syn_path.exists():
+        raise typer.BadParameter(f"Synthèse absente : {syn_path}. Lance d'abord le skill instatrip-teams.")
+    synthesis = Synthesis.model_validate_json(syn_path.read_text(encoding="utf-8"))
+    chapters = [
+        ChapterAnalysis.model_validate_json(p.read_text(encoding="utf-8"))
+        for p in sorted(analysis.glob("chapter_*.json"))
+    ]
+    out_dir = s.obsidian_dir / s.collection_slug
+    index = export_teams_obsidian(synthesis, chapters, out_dir, slug=s.collection_slug)
+    console.print(f"[green]✓ Obsidian : {index}")
 
 
 if __name__ == "__main__":

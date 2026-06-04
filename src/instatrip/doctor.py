@@ -7,6 +7,8 @@ from pathlib import Path
 
 from .session import check_session
 
+_VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v"}
+
 
 @dataclass
 class Check:
@@ -71,6 +73,37 @@ def check_ig_session(state_path: Path) -> Check:
                  "uv run instatrip auth", detail=detail)
 
 
+def check_teams_videos(base_path: Path | None = None) -> Check:
+    """Non-blocking informational check: are there any videos in collections/*/input/?"""
+    if base_path is None:
+        base_path = Path.cwd()
+    collections_root = base_path / "collections"
+    found: list[str] = []
+    if collections_root.exists():
+        for input_dir in collections_root.glob("*/input"):
+            if input_dir.is_dir():
+                slug = input_dir.parent.name
+                videos = [f for f in input_dir.iterdir()
+                          if f.is_file() and f.suffix.lower() in _VIDEO_EXTS]
+                if videos:
+                    found.append(f"{slug} ({len(videos)} vidéo{'s' if len(videos) > 1 else ''})")
+    if found:
+        return Check(
+            name="Teams videos",
+            status="ok",
+            blocking=False,
+            hint="",
+            detail=f"Vidéo(s) détectée(s) : {', '.join(found)}",
+        )
+    return Check(
+        name="Teams videos",
+        status="warn",
+        blocking=False,
+        hint="Dépose une vidéo dans collections/<slug>/input/ pour le mode Teams.",
+        detail="Aucune vidéo détectée",
+    )
+
+
 def build_report(state_path: Path) -> list[Check]:
     return [
         check_ffmpeg(),
@@ -78,6 +111,7 @@ def build_report(state_path: Path) -> list[Check]:
         check_chromium(),
         check_torch(),
         check_ig_session(state_path),
+        check_teams_videos(state_path.parent.parent),  # state_path = <root>/.secrets/ig_state.json → root = parent.parent
     ]
 
 

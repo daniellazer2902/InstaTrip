@@ -19,3 +19,22 @@ def scaffold_collection(project_root: Path, slug: str, url: str, profile: str = 
         encoding="utf-8",
     )
     return env
+
+
+def scaffold_teams(project_root: Path, slug: str) -> Path:
+    """Crée collections/<slug>/input/ + .env (profil teams).
+    Refuse si le .env existe déjà."""
+    col = project_root / "collections" / slug
+    env = col / ".env"
+    if env.exists():
+        raise FileExistsError(
+            f"La collection '{slug}' existe déjà ({env})."
+        )
+    (col / "input").mkdir(parents=True, exist_ok=True)
+    (col / "data").mkdir(parents=True, exist_ok=True)
+    env.write_text(
+        f"COLLECTION_SLUG={slug}\n"
+        f"COLLECTION_PROFILE=teams\n",
+        encoding="utf-8",
+    )
+    return env

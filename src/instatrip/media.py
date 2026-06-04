@@ -117,7 +117,7 @@ def sample_frames(video_path: Path, out_dir: Path, every_seconds: float = 2.0) -
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    return sorted(out_dir.glob("frame_*.jpg"))
+    return sorted(out_dir.glob("frame_*.jpg"), key=lambda p: int(p.stem.split("_")[-1]))
 
 
 def _dhash_grid(pixels: list[int]) -> int:
@@ -151,6 +151,58 @@ def _dhash_bands(image_path: Path, band_ratio: float = 0.3) -> tuple[int, int]:
     top_img = img.crop((0, 0, w, band_h)).resize((9, 8), Image.LANCZOS)
     bot_img = img.crop((0, h - band_h, w, h)).resize((9, 8), Image.LANCZOS)
     return _dhash_grid(list(top_img.getdata())), _dhash_grid(list(bot_img.getdata()))
+
+
+def _timecode_for_frame(path: Path, every_seconds: float) -> float:
+    """frame_001.jpg → t=0 ; frame_002.jpg → t=every_seconds ; etc.
+    (ffmpeg fps=1/N émet la 1re frame à t=0)."""
+    n = int(path.stem.split("_")[-1])
+    return (n - 1) * every_seconds
+
+
+def sample_frames_with_timecodes(
+    video_path: Path, out_dir: Path, every_seconds: float = 2.0
+) -> list[tuple[Path, float]]:
+    """Échantillonne et renvoie (chemin, timecode_secondes) par frame."""
+    frames = sample_frames(video_path, out_dir, every_seconds)
+    return [(f, _timecode_for_frame(f, every_seconds)) for f in frames]
+
+
+def dedup_frames_tc(
+    frames: list[tuple[Path, float]],
+    threshold: int = 6,
+    mode: str = "bands",
+    delete_dropped: bool = True,
+) -> list[tuple[Path, float]]:
+    """Comme dedup_frames mais sur des couples (path, timecode). Supprime du
+    disque les frames écartées si delete_dropped=True. Garde une frame par
+    'plan' visuel (changement d'écran/slide)."""
+    if mode not in {"full", "bands"}:
+        raise ValueError(f"mode must be 'full' or 'bands', got {mode!r}")
+
+    kept: list[tuple[Path, float]] = []
+    last_hash: int | tuple[int, int] | None = None
+    for path, tc in frames:
+        if mode == "full":
+            h = _dhash(path)
+            keep = last_hash is None or bin(h ^ last_hash).count("1") > threshold
+            new_hash: int | tuple[int, int] = h
+        else:
+            h_top, h_bot = _dhash_bands(path)
+            if last_hash is None:
+                keep = True
+            else:
+                top = bin(h_top ^ last_hash[0]).count("1")
+                bot = bin(h_bot ^ last_hash[1]).count("1")
+                keep = top > threshold or bot > threshold
+            new_hash = (h_top, h_bot)
+
+        if keep:
+            kept.append((path, tc))
+            last_hash = new_hash
+        elif delete_dropped:
+            path.unlink(missing_ok=True)
+    return kept
 
 
 def dedup_frames(

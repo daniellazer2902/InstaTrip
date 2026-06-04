@@ -182,6 +182,18 @@ uv run instatrip interpret --trip-context "Voyage Japon 2026" --workers 4
 | `--excel / --no-excel` | ON | Génère `output/<slug>.xlsx` |
 | `--obsidian / --no-obsidian` | ON | Génère 1 note `.md` par post + 1 index groupé par ville |
 
+## Mode Teams (analyse de vidéo locale)
+
+Analyse une vidéo Teams (présentation de projet) en note Obsidian navigable.
+
+1. `uv run instatrip teams new <slug>` - crée `collections/<slug>/input/`
+2. Dépose ta vidéo dans `collections/<slug>/input/`
+3. `uv run instatrip teams ingest --collection <slug>` - audio, transcription, frames, OCR vers `data/bundle.json`
+4. Invoque le skill **instatrip-teams** dans Claude Code - chapitrage + synthèse (interactif)
+5. `uv run instatrip teams export --collection <slug>` - génère le dossier Obsidian
+
+Options utiles de `ingest` : `--model` (défaut `medium`), `--frame-interval` (défaut 2s), `--window-minutes` (défaut 15), `--dedup-mode bands|full`.
+
 ## Sentinelle phase 2 (technique)
 
 Le skill `instatrip-analyze` écrit `data/.enriched.done` (ou `.enriched.done.<worker_id>` en mode parallèle) avec :
