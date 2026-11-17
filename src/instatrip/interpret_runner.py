@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Callable
 
 from rich.console import Console
 
@@ -74,17 +75,25 @@ def run_analysis(
     if root is None:
         raise ValueError("collection_root requis")
     if n_workers <= 1:
-        return _run_single(root, trip_context, timeout_seconds, profile_name)
-    return _run_parallel(root, trip_context, n_workers, timeout_seconds, profile_name)
+        return _run_single(
+            root, timeout_seconds, _build_prompt(trip_context, profile_name),
+            SENTINEL_NAME, "instatrip-analyze",
+        )
+    return _run_parallel(
+        root, n_workers, timeout_seconds,
+        lambda wid, bucket: _build_worker_prompt(trip_context, wid, bucket, profile_name),
+        SENTINEL_NAME,
+    )
 
 
-def _run_single(collection_root: Path, trip_context: str, timeout_seconds: int, profile_name: str) -> dict:
-    sentinel = collection_root / "data" / SENTINEL_NAME
+def _run_single(
+    collection_root: Path, timeout_seconds: int, prompt: str, sentinel_name: str, skill: str
+) -> dict:
+    sentinel = collection_root / "data" / sentinel_name
     if sentinel.exists():
         sentinel.unlink()
 
-    prompt = _build_prompt(trip_context, profile_name)
-    console.print("[cyan]→ claude -p (skill instatrip-analyze)")
+    console.print(f"[cyan]→ claude -p (skill {skill})")
     subprocess.run(
         ["claude", "-p", prompt],
         cwd=str(collection_root),
@@ -109,10 +118,15 @@ def _run_single(collection_root: Path, trip_context: str, timeout_seconds: int, 
 
 
 def _run_parallel(
-    collection_root: Path, trip_context: str, n_workers: int, timeout_seconds: int, profile_name: str
+    collection_root: Path,
+    n_workers: int,
+    timeout_seconds: int,
+    worker_prompt: Callable[[int, list[str]], str],
+    sentinel_name: str,
+    items_dir: str = "raw",
 ) -> dict:
-    raw_dir = collection_root / "data" / "raw"
-    shortcodes = sorted(f.stem for f in raw_dir.glob("*.json"))
+    src_dir = collection_root / "data" / items_dir
+    shortcodes = sorted(f.stem for f in src_dir.glob("*.json"))
     if not shortcodes:
         return {
             "status": "ok",
@@ -126,7 +140,7 @@ def _run_parallel(
     buckets = [b for b in buckets if b]
 
     for wid in range(len(buckets)):
-        s = collection_root / "data" / f"{SENTINEL_NAME}.{wid}"
+        s = collection_root / "data" / f"{sentinel_name}.{wid}"
         if s.exists():
             s.unlink()
 
@@ -136,7 +150,7 @@ def _run_parallel(
     )
     procs: list[subprocess.Popen] = []
     for wid, bucket in enumerate(buckets):
-        prompt = _build_worker_prompt(trip_context, wid, bucket, profile_name)
+        prompt = worker_prompt(wid, bucket)
         p = subprocess.Popen(
             ["claude", "-p", prompt],
             cwd=str(collection_root),
@@ -159,7 +173,7 @@ def _run_parallel(
     }
     ok_workers = 0
     for wid in range(len(buckets)):
-        s = collection_root / "data" / f"{SENTINEL_NAME}.{wid}"
+        s = collection_root / "data" / f"{sentinel_name}.{wid}"
         if not s.exists():
             aggregated["failures"].append({"worker": wid, "error": "sentinelle absente"})
             aggregated["failed"] += 1
@@ -192,3 +206,37 @@ def _run_parallel(
         f"skipped={aggregated['skipped']} failed={aggregated['failed']}"
     )
     return aggregated
+
+
+VEILLE_SENTINEL = ".veille.done"
+
+
+def _veille_prompt(context: str, worker_id: int | None, shortcodes: list[str] | None) -> str:
+    scope = (
+        f"Worker ID: {worker_id}. Shortcodes à traiter (seulement ceux-là) : {', '.join(shortcodes)}.\n"
+        f"Sentinelle de fin : data/{VEILLE_SENTINEL}.{worker_id}.\n"
+        if worker_id is not None
+        else f"Traiter tous les data/enriched/*.json. Sentinelle de fin : data/{VEILLE_SENTINEL}.\n"
+    )
+    return (
+        "Invoke the skill instatrip-veille for the current project.\n"
+        f"Lecteur de la veille : {context or '(non précisé)'}.\n"
+        + scope
+        + "Ne pas s'arrêter avant d'avoir écrit la sentinelle."
+    )
+
+
+def run_veille(
+    collection_root: Path, context: str = "", n_workers: int = 4, timeout_seconds: int = 60 * 60
+) -> dict:
+    """Phase veille (profil tech) : data/veille/<shortcode>.json par post."""
+    if n_workers <= 1:
+        return _run_single(
+            collection_root, timeout_seconds, _veille_prompt(context, None, None),
+            VEILLE_SENTINEL, "instatrip-veille",
+        )
+    return _run_parallel(
+        collection_root, n_workers, timeout_seconds,
+        lambda wid, bucket: _veille_prompt(context, wid, bucket),
+        VEILLE_SENTINEL, items_dir="enriched",
+    )

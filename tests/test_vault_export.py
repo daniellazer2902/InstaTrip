@@ -67,3 +67,38 @@ def test_post_without_resolved_repo_becomes_astuce(tmp_path):
     insights[0] = _ins("T", category="tip-ia", title="Titre reformulé")
     export_vault(insights, resolved, tmp_path)
     assert {p.name for p in (tmp_path / "Astuces").glob("*.md")} == files
+
+
+VEILLE_A = {
+    "shortcode": "A",
+    "contenu": "1. Clés API dans le .env\n2. RLS activée",
+    "liens": [{"url": "https://firecrawl.dev", "label": "Site"}],
+    "verdict": "utile", "pertinence": 4,
+    "analyse": "Remplace un scraper maison.\nBon pour les agents.",
+    "comment_tester": "1. `npx firecrawl`",
+    "limites": ["AGPL"], "idees_projets": ["Veille auto"],
+    "repos": {"firecrawl/firecrawl": {"resume": "API de scraping.", "fonctionnalites": ["crawl"],
+                                      "installation": "docker", "maturite": "actif",
+                                      "correspondance_video": "fausse"}},
+}
+
+
+def test_veille_analysis_is_rendered_in_repo_note(tmp_path):
+    export_vault([_ins("A")], {"A": [REPO]}, tmp_path, veille={"A": VEILLE_A})
+    note = (tmp_path / "Repos" / "firecrawl-firecrawl.md").read_text(encoding="utf-8")
+    assert 'verdict: "utile"' in note and "pertinence: 4" in note
+    assert "> [!abstract] Verdict : ✅ utile · pertinence 4/5" in note
+    assert "> Bon pour les agents." in note
+    assert "## Le dépôt" in note and "**Installation** : docker" in note
+    assert "[!danger] Le README ne correspond pas" in note
+    assert "## Ce que dit la vidéo" in note and "2. RLS activée" in note
+    assert "- [Site](https://firecrawl.dev)" in note
+    assert "## Comment tester" in note and "- AGPL" in note
+
+
+def test_veille_content_is_rendered_in_astuce_note(tmp_path):
+    v = {**VEILLE_A, "shortcode": "T", "repos": {}}
+    export_vault([_ins("T", category="tuto", title="20 trucs SaaS")], {"T": []}, tmp_path, veille={"T": v})
+    note = (tmp_path / "Astuces" / "20 trucs SaaS.md").read_text(encoding="utf-8")
+    assert "## Contenu" in note and "1. Clés API dans le .env" in note
+    assert 'verdict: "utile"' in note

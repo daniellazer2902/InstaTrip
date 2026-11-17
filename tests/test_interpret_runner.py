@@ -178,3 +178,10 @@ def test_run_analysis_parallel_no_raw_files(tmp_path):
         "failures": [],
     }
     popen_mock.assert_not_called()
+
+
+def test_veille_worker_prompt_targets_skill_and_worker_sentinel():
+    from instatrip.interpret_runner import _veille_prompt
+    p = _veille_prompt("dev Next.js", 2, ["A", "B"])
+    assert "instatrip-veille" in p and "dev Next.js" in p
+    assert "A, B" in p and "data/.veille.done.2" in p

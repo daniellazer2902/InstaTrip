@@ -194,6 +194,69 @@ def resolve_all(
     return stats
 
 
+README_MAX_CHARS = 15000
+
+
+def repo_cache_name(full_name: str) -> str:
+    return full_name.replace("/", "__")
+
+
+def fetch_repo_details(full_name: str, runner: Runner = gh_runner) -> dict:
+    """README (tronqué) et signaux de maturité, pour l'analyse de veille."""
+    details: dict = {"full_name": full_name}
+    out = runner(["api", f"repos/{full_name}"])
+    if out:
+        try:
+            d = json.loads(out)
+            details.update({
+                "homepage": d.get("homepage") or None,
+                "topics": d.get("topics") or [],
+                "open_issues": d.get("open_issues_count"),
+                "forks": d.get("forks_count"),
+                "created_at": (d.get("created_at") or "")[:10],
+                "pushed_at": (d.get("pushed_at") or "")[:10],
+                "stars": d.get("stargazers_count"),
+                "archived": bool(d.get("archived")),
+            })
+        except json.JSONDecodeError:
+            pass
+    rel = runner(["api", f"repos/{full_name}/releases/latest"])
+    if rel:
+        try:
+            r = json.loads(rel)
+            details["latest_release"] = {
+                "tag": r.get("tag_name"), "published_at": (r.get("published_at") or "")[:10],
+            }
+        except json.JSONDecodeError:
+            pass
+    readme = runner(["api", f"repos/{full_name}/readme", "-H", "Accept: application/vnd.github.raw"])
+    if readme:
+        details["readme"] = readme[:README_MAX_CHARS]
+        details["readme_truncated"] = len(readme) > README_MAX_CHARS
+    return details
+
+
+def fetch_all_repo_details(
+    resolved_dir: Path, repos_dir: Path, force: bool = False, runner: Runner = gh_runner
+) -> int:
+    repos_dir.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for repos in load_resolved(resolved_dir).values():
+        for r in repos:
+            full = r.get("full_name")
+            if not full:
+                continue
+            out = repos_dir / f"{repo_cache_name(full)}.json"
+            if out.exists() and not force:
+                continue
+            out.write_text(
+                json.dumps(fetch_repo_details(full, runner), indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            n += 1
+    return n
+
+
 def load_resolved(resolved_dir: Path) -> dict[str, list[dict]]:
     out: dict[str, list[dict]] = {}
     if not resolved_dir.exists():

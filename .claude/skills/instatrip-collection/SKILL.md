@@ -32,7 +32,7 @@ Indique : nombre de posts traités (et nouveaux), échecs éventuels (posts inac
 - Excel : `collections/<slug>/output/<slug>.xlsx`
 - Obsidian : `collections/<slug>/output/obsidian/` — l'**index** `<slug>.md` et la **base** `<slug>.base` sont à la racine, les **notes par post** sont dans le sous-dossier `posts/`.
 
-**Profil `tech` uniquement** : `run` enchaîne aussi `resolve` (validation des noms de dépôts via `gh`) puis `vault` (une note par ressource dans `VAULT_VEILLE_DIR`, sous `Repos/` et `Astuces/`). Ajoute au rapport :
+**Profil `tech` uniquement** : `run` enchaîne aussi `resolve` (validation des noms de dépôts via `gh`, puis README et signaux de maturité), `veille` (analyse approfondie par le skill instatrip-veille : contenu complet, liens, verdict) puis `vault` (une note par ressource dans `VAULT_VEILLE_DIR`, sous `Repos/` et `Astuces/`). Ajoute au rapport :
 - le nombre de repos et d'astuces écrits dans le vault ;
 - les correspondances `a-verifier` (lister `data/resolved/*.json` dont `confidence` vaut `a-verifier`) et les dépôts `non-resolu`, pour que l'utilisateur tranche.
 Pré-requis : `gh auth status` OK. Si `VAULT_VEILLE_DIR` n'est pas défini, le signaler.

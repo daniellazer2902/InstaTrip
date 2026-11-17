@@ -23,14 +23,6 @@ AUTO_END = "<!-- veille:auto:end -->"
 SKIP_CATEGORIES = {"autre"}
 RESOLVED_OK = {"exact", "nom-exact", "a-verifier"}
 
-REPO_KEYS = [
-    "type", "repo", "url", "description", "stars", "langage", "dernier_push",
-    "licence", "archive", "confiance", "stack", "outils", "tags", "sources", "maj",
-]
-ASTUCE_KEYS = [
-    "type", "shortcode", "categorie", "outils", "stack", "repos_non_resolus",
-    "mot_cle_cta", "tags", "url", "maj",
-]
 _SOURCE_LINE_RE = re.compile(r"^- .*\((https://www\.instagram\.com/[^)]+)\)")
 
 
@@ -40,6 +32,7 @@ class Source:
     url: str
     description: str
     cas_usage: Optional[str] = None
+    shortcode: str = ""
 
     def line(self) -> str:
         extra = f" : {self.cas_usage}" if self.cas_usage else ""
@@ -159,13 +152,71 @@ def _collect_repos(
                 res.repo = r
             res.sources.append(Source(
                 title=i.title, url=str(i.url), description=i.description,
-                cas_usage=i.attributes.get("cas_usage"),
+                cas_usage=i.attributes.get("cas_usage"), shortcode=i.shortcode,
             ))
             res.stack.update(_as_list(i.attributes.get("stack")))
             res.outils.update(_as_list(i.attributes.get("outils")))
             res.tags.update(i.tags)
             covered.add(i.shortcode)
     return repos, covered
+
+
+VERDICT_ICON = {"utile": "✅", "a-creuser": "🔍", "gadget": "🎈", "hors-sujet": "⛔"}
+
+
+def _md_list(items: list[str]) -> str:
+    return "\n".join(f"- {x}" for x in items)
+
+
+def _verdict_block(v: dict) -> str:
+    if not v.get("verdict"):
+        return ""
+    icon = VERDICT_ICON.get(v["verdict"], "")
+    head = f"> [!abstract] Verdict : {icon} {v['verdict']} · pertinence {v.get('pertinence', '?')}/5"
+    body = "\n".join("> " + ln for ln in (v.get("analyse") or "").strip().splitlines())
+    return head + ("\n" + body if body else "") + "\n\n"
+
+
+def _common_sections(v: dict) -> str:
+    out = ""
+    if v.get("comment_tester"):
+        out += f"## Comment tester\n\n{v['comment_tester'].strip()}\n\n"
+    if v.get("limites"):
+        out += f"## Limites\n\n{_md_list(v['limites'])}\n\n"
+    if v.get("idees_projets"):
+        out += f"## Idées d'usage\n\n{_md_list(v['idees_projets'])}\n\n"
+    return out
+
+
+def _links_section(links: list[dict]) -> str:
+    seen: dict[str, str] = {}
+    for lk in links:
+        url = lk.get("url")
+        if url and url not in seen:
+            seen[url] = lk.get("label") or url
+    if not seen:
+        return ""
+    return "## Liens\n\n" + "\n".join(f"- [{lbl}]({u})" for u, lbl in seen.items()) + "\n\n"
+
+
+def _repo_analysis(info: dict) -> str:
+    if not info:
+        return ""
+    out = "## Le dépôt\n\n"
+    if info.get("correspondance_video") == "fausse":
+        out = ("> [!danger] Le README ne correspond pas à la vidéo\n> Ce dépôt a probablement été mal "
+               "identifié. Corriger via `overrides.json`.\n\n") + out
+    elif info.get("correspondance_video") == "douteuse":
+        out = "> [!warning] Correspondance vidéo / README douteuse\n\n" + out
+    if info.get("resume"):
+        out += info["resume"].strip() + "\n\n"
+    if info.get("fonctionnalites"):
+        out += _md_list(info["fonctionnalites"]) + "\n\n"
+    if info.get("installation"):
+        out += f"**Installation** : {info['installation'].strip()}\n\n"
+    if info.get("maturite"):
+        out += f"**Maturité** : {info['maturite'].strip()}\n\n"
+    return out
 
 
 def _existing_astuce_path(dir_: Path, shortcode: str) -> Optional[Path]:
@@ -182,7 +233,9 @@ def export_vault(
     resolved: dict[str, list[dict]],
     vault_dir: Path,
     today: Optional[date] = None,
+    veille: Optional[dict[str, dict]] = None,
 ) -> dict:
+    veille = veille or {}
     today_s = (today or date.today()).isoformat()
     repos_dir = vault_dir / "Repos"
     astuces_dir = vault_dir / "Astuces"
@@ -205,13 +258,31 @@ def export_vault(
         if r.get("archived"):
             warn += "> [!caution] Dépôt archivé\n\n"
         cas = next((s.cas_usage for s in res.sources if s.cas_usage), None)
+        vs = [veille[s.shortcode] for s in res.sources if s.shortcode in veille]
+        main_v = max(vs, key=lambda v: v.get("pertinence") or 0) if vs else {}
+        info = next((v["repos"][k] for v in vs for k in (v.get("repos") or {})
+                     if k.lower() == r["full_name"].lower()), {})
+        videos = ""
+        for s_ in res.sources:
+            c = (veille.get(s_.shortcode) or {}).get("contenu")
+            if c:
+                videos += f"### {s_.title}\n\n{c.strip()}\n\n"
+        links = [{"url": r["url"], "label": r["full_name"]}]
+        for v in vs:
+            links += v.get("liens") or []
         auto = (
             f"{warn}> {r.get('description') or '(pas de description)'}\n\n"
+            + _verdict_block(main_v)
             + (f"**Cas d'usage** : {cas}\n\n" if cas else "")
             + f"[{r['full_name']}]({r['url']}) · ⭐ {r.get('stars', 0)}"
             + (f" · {r['language']}" if r.get("language") else "")
             + (f" · dernier push {r['pushed_at']}" if r.get("pushed_at") else "")
-            + "\n\n## Vu dans\n\n" + "\n".join(prev_sources.values())
+            + "\n\n"
+            + _repo_analysis(info)
+            + _common_sections(main_v)
+            + (f"## Ce que dit la vidéo\n\n{videos}" if videos else "")
+            + _links_section(links)
+            + "## Vu dans\n\n" + "\n".join(prev_sources.values())
         )
         managed = [
             ("type", "veille-repo"), ("repo", r["full_name"]), ("url", r["url"]),
@@ -220,7 +291,8 @@ def export_vault(
             ("licence", r.get("license")), ("archive", r.get("archived", False)),
             ("confiance", r["confidence"]), ("stack", sorted(res.stack)),
             ("outils", sorted(res.outils)), ("tags", sorted(res.tags | {"veille-tech"})),
-            ("sources", len(prev_sources)), ("maj", today_s),
+            ("sources", len(prev_sources)), ("verdict", main_v.get("verdict")),
+            ("pertinence", main_v.get("pertinence")), ("maj", today_s),
         ]
         _write_note(path, managed, r["full_name"], auto,
                     default_fm=[("statut", "a-tester")],
@@ -241,7 +313,8 @@ def export_vault(
             if path.exists():
                 path = astuces_dir / f"{safe_filename(i.title)} ({i.shortcode}).md"
         cta = i.attributes.get("mot_cle_cta")
-        auto = i.description + "\n\n"
+        v = veille.get(i.shortcode) or {}
+        auto = i.description + "\n\n" + _verdict_block(v)
         if i.attributes.get("cas_usage"):
             auto += f"**Cas d'usage** : {i.attributes['cas_usage']}\n\n"
         if unresolved:
@@ -251,13 +324,17 @@ def export_vault(
                      + "\n\n")
         elif cta:
             auto += f"Mot-clé à commenter sur le post : `{cta}`\n\n"
+        if v.get("contenu"):
+            auto += f"## Contenu\n\n{v['contenu'].strip()}\n\n"
+        auto += _common_sections(v) + _links_section(v.get("liens") or [])
         auto += f"[Voir le post]({i.url})"
         managed = [
             ("type", "veille-astuce"), ("shortcode", i.shortcode), ("categorie", i.category),
             ("outils", _as_list(i.attributes.get("outils"))),
             ("stack", _as_list(i.attributes.get("stack"))),
             ("repos_non_resolus", unresolved), ("mot_cle_cta", cta),
-            ("tags", sorted(set(i.tags) | {"veille-tech"})), ("url", str(i.url)), ("maj", today_s),
+            ("tags", sorted(set(i.tags) | {"veille-tech"})), ("url", str(i.url)),
+            ("verdict", v.get("verdict")), ("pertinence", v.get("pertinence")), ("maj", today_s),
         ]
         _write_note(path, managed, i.title, auto,
                     default_fm=[("statut", "a-tester")],
@@ -293,6 +370,10 @@ properties:
     displayName: Stack
   categorie:
     displayName: Catégorie
+  verdict:
+    displayName: Verdict
+  pertinence:
+    displayName: Pertinence
   formula.lien:
     displayName: Lien
 
@@ -303,9 +384,9 @@ views:
       and:
         - 'type == "veille-repo"'
         - 'statut == "a-tester"'
-    order: [file.name, description, stack, stars, dernier_push, formula.lien]
+    order: [file.name, verdict, pertinence, description, stack, stars, formula.lien]
     sort:
-      - property: stars
+      - property: pertinence
         direction: DESC
 
   - type: table
@@ -313,14 +394,14 @@ views:
     filters:
       and: ['type == "veille-repo"']
     groupBy: { property: statut, direction: ASC }
-    order: [file.name, description, stack, stars, confiance, formula.lien]
+    order: [file.name, verdict, pertinence, description, stack, stars, confiance, formula.lien]
 
   - type: table
     name: "Astuces, outils, prompts"
     filters:
       and: ['type == "veille-astuce"']
     groupBy: { property: categorie, direction: ASC }
-    order: [file.name, outils, stack, statut, formula.lien]
+    order: [file.name, verdict, pertinence, outils, stack, statut, formula.lien]
 
   - type: table
     name: "Dépôts à identifier"

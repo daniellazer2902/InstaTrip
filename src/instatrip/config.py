@@ -26,6 +26,8 @@ class Settings:
     input_dir: Path
     resolved_dir: Path | None = None
     vault_veille_dir: Path | None = None
+    ocr_languages: tuple[str, ...] = ("en", "ja")
+    veille_context: str = ""
 
     @classmethod
     def load(cls, collection: str | None = None) -> "Settings":
@@ -76,4 +78,8 @@ class Settings:
             input_dir=input_dir,
             resolved_dir=collection_root / "data" / "resolved",
             vault_veille_dir=Path(v) if (v := os.environ.get("VAULT_VEILLE_DIR")) else None,
+            veille_context=os.environ.get("VEILLE_CONTEXT", ""),
+            ocr_languages=tuple(
+                x.strip() for x in os.environ.get("OCR_LANGUAGES", "en,ja").split(",") if x.strip()
+            ),
         )

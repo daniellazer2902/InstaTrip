@@ -126,7 +126,7 @@ def resolve(
     collection: str = _collection_opt(),
 ):
     """Profil tech : valide les noms de dépôts extraits via GitHub (CLI gh)."""
-    from .resolve import resolve_all
+    from .resolve import fetch_all_repo_details, resolve_all
     s = Settings.load(collection=collection)
     stats = resolve_all(
         s.enriched_dir, s.resolved_dir, force=force,
@@ -136,6 +136,23 @@ def resolve(
         f"[green]✓ resolve : {stats['processed']} posts traités, {stats['skipped']} déjà faits, "
         f"{stats['repos']} dépôts trouvés, {stats['unresolved']} non résolus"
     )
+    n = fetch_all_repo_details(s.resolved_dir, s.collection_root / "data" / "repos", force=force)
+    console.print(f"[green]✓ détails (README, release, topics) récupérés pour {n} dépôts")
+
+
+@app.command()
+def veille(
+    context: str = typer.Option(
+        "", help="Qui lit la veille (stack, projets), pour juger la pertinence."
+    ),
+    workers: int = typer.Option(4, help="Nombre de claude -p en parallèle"),
+    collection: str = _collection_opt(),
+):
+    """Profil tech : analyse approfondie (contenu complet, liens, verdict) → data/veille/."""
+    from .interpret_runner import run_veille
+    s = Settings.load(collection=collection)
+    (s.collection_root / "data" / "veille").mkdir(parents=True, exist_ok=True)
+    run_veille(s.collection_root, context or s.veille_context, n_workers=workers)
 
 
 @app.command()
@@ -154,7 +171,11 @@ def vault(
         PostInsight.model_validate_json(p.read_text(encoding="utf-8"))
         for p in sorted(s.enriched_dir.glob("*.json"))
     ]
-    stats = export_vault(insights, load_resolved(s.resolved_dir), dest)
+    veille_data = {
+        p.stem: json.loads(p.read_text(encoding="utf-8-sig"))
+        for p in (s.collection_root / "data" / "veille").glob("*.json")
+    }
+    stats = export_vault(insights, load_resolved(s.resolved_dir), dest, veille=veille_data)
     console.print(f"[green]✓ Vault : {stats['repos']} repos, {stats['astuces']} astuces → {dest}")
 
 
@@ -177,6 +198,7 @@ def run(
     s = Settings.load(collection=collection)
     if (profile or s.collection_profile) == "tech":
         resolve(force=False, collection=collection)
+        veille(context="", workers=workers, collection=collection)
         if s.vault_veille_dir:
             vault(target=None, collection=collection)
         else:

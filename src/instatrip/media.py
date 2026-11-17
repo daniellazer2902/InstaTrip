@@ -77,8 +77,12 @@ def download_media(
     Plus aucun appel yt-dlp pour les posts photo (fini le crash
     'No video formats found')."""
     if is_video:
-        video_path = download_video(shortcode, state_path, media_dir)
-        return {"video_path": video_path, "image_paths": [], "media_type": "reel"}
+        try:
+            video_path = download_video(shortcode, state_path, media_dir)
+        except yt_dlp.utils.DownloadError:
+            video_path = None
+        if video_path:
+            return {"video_path": video_path, "image_paths": [], "media_type": "reel"}
     paths = download_images(image_urls or [], media_dir, shortcode)
     return {
         "video_path": None,

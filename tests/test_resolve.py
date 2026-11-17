@@ -109,3 +109,19 @@ def test_override_replaces_candidates_and_is_always_rerun(tmp_path):
     data = json.loads((tmp_path / "resolved" / "S.json").read_text(encoding="utf-8"))
     assert data["repos"][0]["full_name"] == "deepbeepmeep/WanGP"
     assert data["repos"][0]["confidence"] == "exact"
+
+def test_fetch_repo_details_collects_readme_and_signals():
+    from instatrip.resolve import fetch_repo_details
+
+    def run(args):
+        if args[1].endswith("/readme"):
+            return "# Hello\n" + "x" * 20000
+        if args[1].endswith("/releases/latest"):
+            return json.dumps({"tag_name": "v1.2", "published_at": "2026-10-01T00:00:00Z"})
+        return json.dumps({"topics": ["ai"], "open_issues_count": 3, "homepage": "https://h",
+                           "created_at": "2025-01-01T00:00:00Z", "stargazers_count": 9})
+
+    d = fetch_repo_details("o/n", runner=run)
+    assert d["topics"] == ["ai"] and d["open_issues"] == 3
+    assert d["latest_release"] == {"tag": "v1.2", "published_at": "2026-10-01"}
+    assert d["readme"].startswith("# Hello") and d["readme_truncated"] is True

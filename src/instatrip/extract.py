@@ -75,10 +75,10 @@ def extract_one(
             console.print(f"[dim]→ {shortcode}: dedup ({dedup_mode}) frames {before} → {len(frames)}")
         if frames:
             console.print(f"[cyan]→ {shortcode}: OCR {len(frames)} frames")
-            ocr_text = ocr_images(frames, min_confidence=ocr_min_confidence)
+            ocr_text = ocr_images(frames, min_confidence=ocr_min_confidence, languages=settings.ocr_languages)
     elif media["image_paths"]:
         console.print(f"[cyan]→ {shortcode}: OCR image(s)")
-        ocr_text = ocr_images(media["image_paths"], min_confidence=ocr_min_confidence)
+        ocr_text = ocr_images(media["image_paths"], min_confidence=ocr_min_confidence, languages=settings.ocr_languages)
 
     if media["video_path"]:
         media_type = MediaType.REEL

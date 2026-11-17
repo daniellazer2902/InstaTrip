@@ -71,12 +71,16 @@ Chaque profil = un domaine (catégories possibles, attributs extraits, template 
 
 ### Profil `tech` : veille vers le vault
 
-Deux étapes de plus, enchaînées automatiquement par `run` :
+Trois étapes de plus, enchaînées automatiquement par `run` :
 
 ```
 uv run instatrip resolve   # valide les noms de dépôts via `gh` → data/resolved/<sc>.json
+                           # + README, release, topics → data/repos/<owner>__<nom>.json
+uv run instatrip veille    # skill instatrip-veille : contenu complet, liens, verdict → data/veille/<sc>.json
 uv run instatrip vault     # une note par ressource dans VAULT_VEILLE_DIR
 ```
+
+La phase `veille` restitue tout ce que dit la vidéo (une liste « 20 points » est reconstituée en entier à partir de la transcription et de l'OCR des frames), analyse les dépôts à partir de leur README et rend un verdict (`utile`, `a-creuser`, `gadget`, `hors-sujet`) avec une pertinence sur 5, jugée pour le lecteur décrit dans `VEILLE_CONTEXT` (`.env` de la collection). Pour la veille, mettre `OCR_LANGUAGES=en,fr` (défaut `en,ja`).
 
 - `Repos/<owner>-<nom>.md` : un dépôt, toutes vidéos confondues (section « Vu dans »).
 - `Astuces/<titre>.md` : post sans dépôt résolu (outil, tip IA, prompt, tuto), avec les noms non identifiés et le mot-clé CTA.

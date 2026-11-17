@@ -48,7 +48,17 @@ def parse_post_media(html: str) -> dict:
     og_type = soup.find("meta", attrs={"property": "og:type"})
     og_video = soup.find("meta", attrs={"property": "og:video"})
     type_val = (og_type["content"] if og_type and og_type.get("content") else "").lower()
-    is_video = bool(og_video) or "video" in type_val
+    og_url = soup.find("meta", attrs={"property": "og:url"})
+    url_val = (og_url["content"] if og_url and og_url.get("content") else "").lower()
+    # Instagram ne sert plus og:video (fin 2026) : og:url en /reel/ ou /tv/ et
+    # le payload video_versions restent les signaux fiables.
+    is_video = (
+        bool(og_video)
+        or "video" in type_val
+        or "/reel/" in url_val
+        or "/tv/" in url_val
+        or '"video_versions"' in html
+    )
 
     image_urls: list[str] = []
     og_image = soup.find("meta", attrs={"property": "og:image"})
