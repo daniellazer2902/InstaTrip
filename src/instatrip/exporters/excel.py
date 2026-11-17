@@ -36,7 +36,10 @@ def export_excel(
             i.title,
         ]
         for key in attr_keys:
-            row.append(i.attributes.get(key) or "")
+            val = i.attributes.get(key)
+            if isinstance(val, list):
+                val = ", ".join(str(x) for x in val)
+            row.append(val or "")
         row.append(i.description)
         row.append(", ".join(i.tags))
         ws.append(row)

@@ -37,3 +37,4 @@ def all_names() -> list[str]:
 from . import voyage as _voyage  # noqa: E402, F401
 from . import recettes as _recettes  # noqa: E402, F401
 from . import sport as _sport  # noqa: E402, F401
+from . import tech as _tech  # noqa: E402, F401

@@ -24,6 +24,8 @@ class Settings:
     state_path: Path
     shortcodes_file: Path
     input_dir: Path
+    resolved_dir: Path | None = None
+    vault_veille_dir: Path | None = None
 
     @classmethod
     def load(cls, collection: str | None = None) -> "Settings":
@@ -72,4 +74,6 @@ class Settings:
             state_path=secrets / "ig_state.json",
             shortcodes_file=shortcodes_file,
             input_dir=input_dir,
+            resolved_dir=collection_root / "data" / "resolved",
+            vault_veille_dir=Path(v) if (v := os.environ.get("VAULT_VEILLE_DIR")) else None,
         )

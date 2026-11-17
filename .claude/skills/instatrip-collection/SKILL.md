@@ -23,7 +23,7 @@ Lance `uv run instatrip collections` pour lister l'existant, puis demande à l'u
   - Recompte les enriched ; rapporte le **nombre de nouveaux posts** (delta).
 
 - **Si le slug n'existe pas → INIT** :
-  - Demande à l'utilisateur : (a) le **lien de la collection Instagram** (dossier Enregistrements, ex: `https://www.instagram.com/<user>/saved/<nom>/<id>/`), (b) le **profil** (`voyage` par défaut, `recettes`, ou `sport`), (c) un **contexte** optionnel (ex: "Voyage Japon 2026").
+  - Demande à l'utilisateur : (a) le **lien de la collection Instagram** (dossier Enregistrements, ex: `https://www.instagram.com/<user>/saved/<nom>/<id>/`), (b) le **profil** (`voyage` par défaut, `recettes`, `sport`, ou `tech` pour la veille repos GitHub / astuces IA), (c) un **contexte** optionnel (ex: "Voyage Japon 2026").
   - Crée la collection : `uv run instatrip new <slug> --url "<lien>" --profile <profil>`.
   - Lance le pipeline : `uv run instatrip run --collection <slug> --trip-context "<contexte>" --workers 4`.
 
@@ -31,6 +31,11 @@ Lance `uv run instatrip collections` pour lister l'existant, puis demande à l'u
 Indique : nombre de posts traités (et nouveaux), échecs éventuels (posts inaccessibles : compte privé / supprimé), et les chemins de sortie :
 - Excel : `collections/<slug>/output/<slug>.xlsx`
 - Obsidian : `collections/<slug>/output/obsidian/` — l'**index** `<slug>.md` et la **base** `<slug>.base` sont à la racine, les **notes par post** sont dans le sous-dossier `posts/`.
+
+**Profil `tech` uniquement** : `run` enchaîne aussi `resolve` (validation des noms de dépôts via `gh`) puis `vault` (une note par ressource dans `VAULT_VEILLE_DIR`, sous `Repos/` et `Astuces/`). Ajoute au rapport :
+- le nombre de repos et d'astuces écrits dans le vault ;
+- les correspondances `a-verifier` (lister `data/resolved/*.json` dont `confidence` vaut `a-verifier`) et les dépôts `non-resolu`, pour que l'utilisateur tranche.
+Pré-requis : `gh auth status` OK. Si `VAULT_VEILLE_DIR` n'est pas défini, le signaler.
 
 ## Règles
 - Ne jamais modifier `data/raw/` ou `data/enriched/` à la main.

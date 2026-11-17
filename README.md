@@ -67,6 +67,23 @@ Chaque profil = un domaine (catégories possibles, attributs extraits, template 
 | `voyage` (défaut) | lieu, tips, activite, autre | city, neighborhood, activity |
 | `recettes` | plat, dessert, boisson, technique, ingredient, autre | cuisine, difficulte, temps, ingredients_cles |
 | `sport` | cardio, musculation, mobilite, technique, programme, autre | groupe_musculaire, equipement, niveau, duree |
+| `tech` | repo, outil, tip-ia, prompt, tuto, autre | repos, outils, stack, cas_usage, mot_cle_cta |
+
+### Profil `tech` : veille vers le vault
+
+Deux étapes de plus, enchaînées automatiquement par `run` :
+
+```
+uv run instatrip resolve   # valide les noms de dépôts via `gh` → data/resolved/<sc>.json
+uv run instatrip vault     # une note par ressource dans VAULT_VEILLE_DIR
+```
+
+- `Repos/<owner>-<nom>.md` : un dépôt, toutes vidéos confondues (section « Vu dans »).
+- `Astuces/<titre>.md` : post sans dépôt résolu (outil, tip IA, prompt, tuto), avec les noms non identifiés et le mot-clé CTA.
+- `Veille-Tech.base` : vues « Repos à tester », « Astuces », « Dépôts à identifier ».
+
+Confiance de résolution : `exact` (owner/nom vérifié), `nom-exact` (nom identique, le plus étoilé), `a-verifier` (meilleur résultat approchant), `non-resolu`.
+Une relance met à jour les notes sans toucher au `statut`, aux clés ajoutées à la main ni au texte hors du bloc `veille:auto`.
 
 Lister les profils dispos : `uv run instatrip profiles`.
 

@@ -24,7 +24,7 @@ def extract_one(
     shortcode: str,
     settings: Settings,
     force: bool = False,
-    frame_interval: float = 2.0,
+    frame_interval: float = 0.5,
     ocr_min_confidence: float = 0.4,
     frame_dedup: bool = True,
     dedup_threshold: int = 6,
@@ -34,7 +34,9 @@ def extract_one(
     déjà, on le relit (sauf si force=True).
 
     - frame_interval : intervalle en secondes entre les frames échantillonnées
-      pour l'OCR (défaut 2.0). Plus petit = plus de frames = plus de temps OCR.
+      pour l'OCR (défaut 0.5). Capture dense : la dedup dHash en aval ne garde
+      qu'une frame par plan visuel, donc le coût OCR reste proportionnel au
+      contenu réel, pas au nombre de frames échantillonnées.
     - ocr_min_confidence : seuil de confiance EasyOCR (défaut 0.4).
     - frame_dedup : si True, skip les frames quasi-identiques via dHash.
     - dedup_threshold : Hamming distance maximale pour considérer une frame
@@ -118,7 +120,7 @@ def extract_all(
     shortcodes: list[str],
     settings: Settings,
     force: bool = False,
-    frame_interval: float = 2.0,
+    frame_interval: float = 0.5,
     ocr_min_confidence: float = 0.4,
     frame_dedup: bool = True,
     dedup_threshold: int = 6,

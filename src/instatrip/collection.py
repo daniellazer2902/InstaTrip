@@ -9,7 +9,11 @@ from rich.console import Console
 
 console = Console()
 
-POST_HREF_RE = re.compile(r"^/(?:p|reel|tv)/([A-Za-z0-9_-]+)/?")
+# Instagram sert desormais les liens sous la forme /<auteur>/reel/<shortcode>/
+# en plus des formes historiques /p/<shortcode>/, /reel/..., /tv/...
+POST_HREF_RE = re.compile(
+    r"^/(?:[A-Za-z0-9._]+/)?(?:p|reel|tv)/([A-Za-z0-9_-]+)/?"
+)
 
 
 def parse_post_links(html: str) -> list[str]:

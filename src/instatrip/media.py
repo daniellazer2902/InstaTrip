@@ -102,8 +102,14 @@ def extract_audio(video_path: Path, out_wav: Path) -> Path:
     return out_wav
 
 
-def sample_frames(video_path: Path, out_dir: Path, every_seconds: float = 2.0) -> list[Path]:
-    """Échantillonne des frames toutes les N secondes."""
+def sample_frames(video_path: Path, out_dir: Path, every_seconds: float = 0.5) -> list[Path]:
+    """Échantillonne des frames toutes les N secondes (défaut 0.5).
+
+    L'échantillonnage est volontairement dense : c'est `dedup_frames`
+    (dHash sur les bandes haute/basse) qui fait le tri intelligent en aval
+    et ne garde qu'une frame par plan visuel. Une grille à 2 s ratait les
+    overlays texte courts des reels ; à 0.5 s ils sont capturés, sans
+    augmenter le nombre de frames réellement passées à l'OCR."""
     out_dir.mkdir(parents=True, exist_ok=True)
     pattern = str(out_dir / "frame_%03d.jpg")
     subprocess.run(
@@ -161,7 +167,7 @@ def _timecode_for_frame(path: Path, every_seconds: float) -> float:
 
 
 def sample_frames_with_timecodes(
-    video_path: Path, out_dir: Path, every_seconds: float = 2.0
+    video_path: Path, out_dir: Path, every_seconds: float = 0.5
 ) -> list[tuple[Path, float]]:
     """Échantillonne et renvoie (chemin, timecode_secondes) par frame."""
     frames = sample_frames(video_path, out_dir, every_seconds)

@@ -57,7 +57,7 @@ def collect(
 @app.command()
 def scrape(
     force: bool = typer.Option(False, help="Force re-download"),
-    frame_interval: float = typer.Option(2.0, help="Intervalle (s) entre frames OCR."),
+    frame_interval: float = typer.Option(0.5, help="Intervalle (s) entre frames OCR (0.5 = capture dense, la dedup dHash filtre ensuite)."),
     ocr_confidence: float = typer.Option(0.4, help="Seuil de confiance EasyOCR (0-1)."),
     frame_dedup: bool = typer.Option(True, help="Dédup les frames quasi-identiques (dHash) avant OCR."),
     dedup_threshold: int = typer.Option(6, help="Distance Hamming max pour dédup (0-64)."),
@@ -121,11 +121,49 @@ def export(
 
 
 @app.command()
+def resolve(
+    force: bool = typer.Option(False, help="Re-résout aussi les posts déjà traités."),
+    collection: str = _collection_opt(),
+):
+    """Profil tech : valide les noms de dépôts extraits via GitHub (CLI gh)."""
+    from .resolve import resolve_all
+    s = Settings.load(collection=collection)
+    stats = resolve_all(
+        s.enriched_dir, s.resolved_dir, force=force,
+        overrides_file=s.collection_root / "overrides.json",
+    )
+    console.print(
+        f"[green]✓ resolve : {stats['processed']} posts traités, {stats['skipped']} déjà faits, "
+        f"{stats['repos']} dépôts trouvés, {stats['unresolved']} non résolus"
+    )
+
+
+@app.command()
+def vault(
+    target: str = typer.Option(None, help="Dossier du vault (défaut: env VAULT_VEILLE_DIR)."),
+    collection: str = _collection_opt(),
+):
+    """Profil tech : exporte une note par ressource dans le vault Obsidian."""
+    from .exporters.vault import export_vault
+    from .resolve import load_resolved
+    s = Settings.load(collection=collection)
+    dest = Path(target) if target else s.vault_veille_dir
+    if not dest:
+        raise typer.BadParameter("Fournir --target ou définir VAULT_VEILLE_DIR dans .env")
+    insights = [
+        PostInsight.model_validate_json(p.read_text(encoding="utf-8"))
+        for p in sorted(s.enriched_dir.glob("*.json"))
+    ]
+    stats = export_vault(insights, load_resolved(s.resolved_dir), dest)
+    console.print(f"[green]✓ Vault : {stats['repos']} repos, {stats['astuces']} astuces → {dest}")
+
+
+@app.command()
 def run(
     url: str = typer.Option(None),
     trip_context: str = typer.Option(""),
     workers: int = typer.Option(1, help="Workers parallèles pour l'étape interpret"),
-    frame_interval: float = typer.Option(2.0),
+    frame_interval: float = typer.Option(0.5),
     ocr_confidence: float = typer.Option(0.4),
     profile: str = typer.Option(None, help="Profil d'analyse"),
     collection: str = _collection_opt(),
@@ -136,6 +174,13 @@ def run(
            frame_dedup=True, dedup_threshold=6, dedup_mode="bands", collection=collection)
     interpret(trip_context=trip_context, workers=workers, profile=profile, collection=collection)
     export(excel=True, obsidian=True, profile=profile, collection=collection)
+    s = Settings.load(collection=collection)
+    if (profile or s.collection_profile) == "tech":
+        resolve(force=False, collection=collection)
+        if s.vault_veille_dir:
+            vault(target=None, collection=collection)
+        else:
+            console.print("[yellow]VAULT_VEILLE_DIR non défini : export vault ignoré.")
 
 
 @app.command()
@@ -169,7 +214,7 @@ def collections():
 def new(
     slug: str = typer.Argument(..., help="Slug de la nouvelle collection (ex: tokyo-2027)"),
     url: str = typer.Option(..., help="URL de la collection Instagram (dossier Enregistrements)"),
-    profile: str = typer.Option("voyage", help="Profil d'analyse (voyage / recettes / sport)"),
+    profile: str = typer.Option("voyage", help="Profil d'analyse (voyage / recettes / sport / tech)"),
 ):
     """Crée une nouvelle collection (collections/<slug>/.env)."""
     try:
@@ -252,7 +297,7 @@ def teams_new(slug: str = typer.Argument(..., help="Slug (ex: demo-projet-x)")):
 @teams_app.command("ingest")
 def teams_ingest(
     model: str = typer.Option("medium", help="Modèle Whisper (tiny/base/small/medium/large-v3)."),
-    frame_interval: float = typer.Option(2.0, help="Intervalle (s) entre frames."),
+    frame_interval: float = typer.Option(0.5, help="Intervalle (s) entre frames (0.5 = capture dense + dedup)."),
     window_minutes: float = typer.Option(15.0, help="Durée d'une fenêtre de chapitrage (min)."),
     dedup_threshold: int = typer.Option(6, help="Distance Hamming max pour dédup frames."),
     dedup_mode: str = typer.Option("bands", help="'bands' ou 'full'."),

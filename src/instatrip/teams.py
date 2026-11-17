@@ -68,7 +68,7 @@ def ingest(
     data_dir: Path,
     slug: str,
     model_size: str = "medium",
-    frame_interval: float = 2.0,
+    frame_interval: float = 0.5,
     window_minutes: float = 15,
     dedup_threshold: int = 6,
     dedup_mode: str = "bands",
